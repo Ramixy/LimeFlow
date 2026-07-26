@@ -1,6 +1,8 @@
-LimeFlow
+# LimeFlow
 
-![LimeFlow](LimeFlow-GitHub-Banner.png)
+<p align="center">
+  <img src="LimeFlow-GitHub-Banner.png" alt="LimeFlow" width="100%">
+</p>
 
 <p align="center">
   Локальная обработка трафика на Android без root-прав.
