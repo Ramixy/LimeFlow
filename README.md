@@ -1,8 +1,6 @@
 LimeFlow
 
-<p align="center">
-  <img src=".github/images/logo.svg" alt="LimeFlow" width="720">
-</p>
+![LimeFlow](LimeFlow-GitHub-Banner.png)
 
 <p align="center">
   Локальная обработка трафика на Android без root-прав.
