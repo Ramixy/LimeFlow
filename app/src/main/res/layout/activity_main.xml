@@ -1,0 +1,468 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_limeflow"
+    android:paddingHorizontal="24dp"
+    tools:context=".activities.MainActivity">
+
+    <ImageView
+        android:id="@+id/brand_logo"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
+        android:layout_marginTop="40dp"
+        android:contentDescription="@string/app_name"
+        android:src="@drawable/ic_limeflow_logo"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="44dp"
+        android:text="@string/app_name"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:layout_marginStart="10dp"
+        app:layout_constraintStart_toEndOf="@id/brand_logo"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/theme_icon_button"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginTop="36dp"
+        android:contentDescription="@string/theme"
+        android:visibility="gone"
+        android:minWidth="0dp"
+        android:padding="12dp"
+        app:backgroundTint="?attr/colorSurface"
+        app:cornerRadius="16dp"
+        app:icon="@drawable/ic_palette_lime"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconTint="?attr/colorPrimary"
+        app:layout_constraintEnd_toStartOf="@id/settings_icon_button"
+        app:layout_constraintTop_toTopOf="parent"
+        app:strokeColor="?attr/colorControlHighlight"
+        app:strokeWidth="1dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/settings_icon_button"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="36dp"
+        android:contentDescription="@string/settings"
+        android:visibility="gone"
+        android:minWidth="0dp"
+        android:padding="12dp"
+        app:backgroundTint="?attr/colorSurface"
+        app:cornerRadius="16dp"
+        app:icon="@drawable/ic_settings_lime"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconTint="?android:attr/textColorPrimary"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:strokeColor="?attr/colorControlHighlight"
+        app:strokeWidth="1dp" />
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/rootless_note"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/rootless_note"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="13sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/title" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/hero_background"
+        android:layout_width="0dp"
+        android:layout_height="360dp"
+        android:layout_marginTop="24dp"
+        app:cardBackgroundColor="?attr/colorSurface"
+        app:cardCornerRadius="32dp"
+        app:cardElevation="0dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/rootless_note"
+        app:strokeColor="?attr/colorControlHighlight"
+        app:strokeWidth="1dp" />
+
+    <View
+        android:id="@+id/power_orbit"
+        android:layout_width="166dp"
+        android:layout_height="166dp"
+        android:layout_marginTop="25dp"
+        android:alpha="0.55"
+        android:background="@drawable/bg_power_orbit"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/hero_background" />
+
+    <ProgressBar
+        android:id="@+id/power_progress"
+        style="?android:attr/progressBarStyle"
+        android:layout_width="162dp"
+        android:layout_height="162dp"
+        android:layout_marginTop="27dp"
+        android:alpha="0"
+        android:indeterminate="true"
+        android:indeterminateTint="?attr/colorPrimary"
+        android:visibility="invisible"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/hero_background" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/status_button_card"
+        android:layout_width="140dp"
+        android:layout_height="140dp"
+        android:layout_marginTop="38dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        app:cardBackgroundColor="?attr/colorPrimary"
+        app:cardCornerRadius="70dp"
+        app:cardElevation="4dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@id/hero_background">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/status_button"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_horizontal|bottom"
+            android:paddingBottom="22dp"
+            android:textColor="?attr/colorOnPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textAllCaps="false"
+            app:backgroundTint="@android:color/transparent"
+            tools:text="@string/vpn_connect" />
+
+        <ImageView
+            android:id="@+id/status_logo"
+            android:layout_width="54dp"
+            android:layout_height="54dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="25dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_limeflow_logo"
+            app:tint="?attr/colorOnPrimary" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/status_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/status_button_card"
+        tools:text="@string/vpn_disconnected" />
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/flow_info_strip"
+        android:layout_width="0dp"
+        android:layout_height="62dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginHorizontal="18dp"
+        app:cardBackgroundColor="?android:attr/colorBackground"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="0dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/status_text"
+        app:strokeColor="?attr/colorControlHighlight"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp">
+
+            <LinearLayout
+                android:id="@+id/flow_mode_action"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/flow_mode_label"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/flow_mode_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textColor="?attr/colorPrimary"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    tools:text="@string/flow_mode_vpn" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="30dp"
+                android:background="?attr/colorControlHighlight" />
+
+            <LinearLayout
+                android:id="@+id/flow_apps_action"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/flow_apps_label"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/flow_apps_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:textColor="?attr/colorPrimary"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="30dp"
+                android:background="?attr/colorControlHighlight" />
+
+            <LinearLayout
+                android:id="@+id/flow_telegram_action"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/flow_telegram_label"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/flow_telegram_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="3dp"
+                    android:maxLines="1"
+                    android:textColor="?attr/colorPrimary"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    tools:text="@string/flow_telegram_excluded" />
+            </LinearLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/strategy_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:foreground="?attr/selectableItemBackground"
+        app:cardBackgroundColor="?attr/colorSurface"
+        app:cardCornerRadius="24dp"
+        app:cardElevation="0dp"
+        app:strokeColor="?attr/colorControlHighlight"
+        app:strokeWidth="1dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/flow_info_strip">
+
+        <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/strategy_button_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxWidth="280dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="10dp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            tools:text="ALT11 · multisplit" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <LinearLayout
+        android:id="@+id/limeflow_inner_navigation"
+        android:layout_width="0dp"
+        android:layout_height="72dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/bg_tab_bar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="6dp"
+        app:layout_constraintBottom_toTopOf="@id/bottom_actions"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/limeflow_home_nav"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_weight="1"
+            android:text="@string/limeflow_home"
+            android:textAllCaps="false"
+            android:textColor="?attr/colorOnPrimary"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            app:backgroundTint="?attr/colorPrimary"
+            app:cornerRadius="22dp"
+            app:icon="@drawable/ic_limeflow_logo"
+            app:iconGravity="top"
+            app:iconPadding="2dp"
+            app:iconSize="20dp"
+            app:iconTint="?attr/colorOnPrimary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/appearance_nav"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:text="@string/theme"
+            android:textAllCaps="false"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="11sp"
+            app:backgroundTint="@android:color/transparent"
+            app:cornerRadius="22dp"
+            app:icon="@drawable/ic_palette_lime"
+            app:iconGravity="top"
+            app:iconPadding="2dp"
+            app:iconSize="20dp"
+            app:iconTint="?attr/colorPrimary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/settings_nav"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="60dp"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:text="@string/settings"
+            android:textAllCaps="false"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="11sp"
+            app:backgroundTint="@android:color/transparent"
+            app:cornerRadius="22dp"
+            app:icon="@drawable/ic_settings_lime"
+            app:iconGravity="top"
+            app:iconPadding="2dp"
+            app:iconSize="20dp"
+            app:iconTint="?attr/colorPrimary" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottom_actions"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="22dp"
+        android:background="@drawable/bg_tab_bar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="6dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/limeflow_tab"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_weight="1"
+            android:text="@string/limeflow_tab"
+            android:maxLines="1"
+            android:textAllCaps="false"
+            android:textColor="?attr/colorOnPrimary"
+            android:textStyle="bold"
+            app:backgroundTint="?attr/colorPrimary"
+            app:cornerRadius="20dp"
+            app:icon="@drawable/ic_limeflow_logo"
+            app:iconGravity="textStart"
+            app:iconSize="22dp"
+            app:iconTint="?attr/colorOnPrimary" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/tg_ws_proxy_tab"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:text="@string/tg_ws_proxy_tab"
+            android:maxLines="1"
+            android:textAllCaps="false"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textStyle="bold"
+            app:backgroundTint="@android:color/transparent"
+            app:cornerRadius="20dp"
+            app:icon="@drawable/ic_telegram_tab"
+            app:iconGravity="textStart"
+            app:iconSize="22dp"
+            app:iconTint="@null" />
+    </LinearLayout>
+
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/proxy_address"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/strategy_button" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

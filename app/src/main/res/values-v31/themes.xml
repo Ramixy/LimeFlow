@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="ThemeOverlay.LimeFlow.Dynamic">
+        <item name="colorPrimary">@android:color/system_accent1_600</item>
+        <item name="colorOnPrimary">@android:color/system_accent1_0</item>
+        <item name="colorPrimaryVariant">@android:color/system_accent1_700</item>
+        <item name="colorSecondary">@android:color/system_accent2_600</item>
+        <item name="colorSurface">@color/app_surface</item>
+        <item name="android:colorBackground">@color/app_background</item>
+        <item name="android:textColorPrimary">@color/app_text</item>
+        <item name="android:textColorSecondary">@color/app_text_muted</item>
+    </style>
+</resources>

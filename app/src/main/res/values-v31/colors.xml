@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_background">@android:color/system_neutral1_10</color>
+    <color name="app_surface">@android:color/system_neutral1_50</color>
+    <color name="app_text">@android:color/system_neutral1_900</color>
+    <color name="app_text_muted">@android:color/system_neutral2_600</color>
+    <color name="app_stroke">@android:color/system_neutral2_200</color>
+    <color name="lime_primary">@android:color/system_accent1_600</color>
+    <color name="lime_primary_variant">@android:color/system_accent1_700</color>
+    <color name="lime_secondary">@android:color/system_accent2_600</color>
+    <color name="lime_ambient">#2B1769E0</color>
+    <color name="lime_shard_one">#171769E0</color>
+    <color name="lime_shard_two">#103F91F0</color>
+    <color name="lime_grid">#121769E0</color>
+</resources>

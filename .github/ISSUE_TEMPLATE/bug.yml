@@ -1,0 +1,62 @@
+name: Сообщение об ошибке
+description: Сообщить о воспроизводимой проблеме LimeFlow
+labels: [bug]
+body:
+  - type: textarea
+    id: bug
+    attributes:
+      label: Что произошло?
+      description: Опишите проблему без паролей, IP-адресов и других личных данных.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Как воспроизвести?
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Тип сети
+      options:
+        - Wi-Fi
+        - Мобильная сеть
+        - Обе
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Устройство
+      value: |
+        - LimeFlow:
+        - Модель телефона:
+        - Версия Android:
+        - Стратегия:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Журнал или скриншоты
+      description: Перед отправкой удалите личные данные.
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Проверка
+      options:
+        - label: Я использую последнюю опубликованную версию.
+          required: true
+        - label: Я проверил существующие Issues.
+          required: true

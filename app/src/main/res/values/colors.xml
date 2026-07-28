@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="surface_light">#F6F7FB</color>
+    <color name="ink">#171923</color>
+    <color name="muted">#717582</color>
+    <color name="app_background">#F5F9FF</color>
+    <color name="app_surface">#FFFFFFFF</color>
+    <color name="app_text">#10233F</color>
+    <color name="app_text_muted">#60748F</color>
+    <color name="app_stroke">#D8E6F8</color>
+    <color name="lime_primary">#1769E0</color>
+    <color name="lime_primary_variant">#0D47A1</color>
+    <color name="lime_secondary">#4094F7</color>
+    <color name="lime_connected">#16A37A</color>
+    <color name="app_error">#BA1A1A</color>
+    <color name="lime_ambient">#2B1769E0</color>
+    <color name="lime_shard_one">#171769E0</color>
+    <color name="lime_shard_two">#103F91F0</color>
+    <color name="lime_grid">#121769E0</color>
+</resources>

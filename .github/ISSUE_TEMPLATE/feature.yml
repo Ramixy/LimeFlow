@@ -1,0 +1,29 @@
+name: Предложение
+description: Предложить улучшение LimeFlow
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую проблему нужно решить?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Предлагаемое решение
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Проверка
+      options:
+        - label: Такой функции ещё нет.
+          required: true
+        - label: Я проверил существующие Issues.
+          required: true
