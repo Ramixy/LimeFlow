@@ -1,0 +1,60 @@
+<resources>
+    <!-- Base application theme. -->
+    <style name="Theme.LimeFlow" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/lime_primary</item>
+        <item name="colorPrimaryVariant">@color/lime_primary_variant</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/lime_secondary</item>
+        <item name="colorSecondaryVariant">@color/lime_primary_variant</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">?android:attr/colorBackground</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="ThemeOverlay.LimeFlow.Blue">
+        <item name="colorPrimary">#64A8FF</item>
+        <item name="colorPrimaryVariant">#2D7DE5</item>
+        <item name="colorSecondary">#8AC0FF</item>
+        <item name="colorOnPrimary">#062D61</item>
+        <item name="colorSurface">#101E31</item>
+        <item name="android:colorBackground">#07111F</item>
+        <item name="android:textColorPrimary">#F4F8FF</item>
+        <item name="android:textColorSecondary">#A6B8D0</item>
+    </style>
+
+    <style name="ThemeOverlay.LimeFlow.Indigo">
+        <item name="colorPrimary">#C4C0FF</item>
+        <item name="colorPrimaryVariant">#918FCA</item>
+        <item name="colorSecondary">#C4C0FF</item>
+        <item name="colorOnPrimary">#2D2A5B</item>
+        <item name="colorSurface">#1B1B1F</item>
+        <item name="android:colorBackground">#131316</item>
+        <item name="android:textColorPrimary">#E4E1E6</item>
+        <item name="android:textColorSecondary">#C8C5D0</item>
+    </style>
+
+    <style name="ThemeOverlay.LimeFlow.Forest">
+        <item name="colorPrimary">#C8C4D3</item>
+        <item name="colorPrimaryVariant">#938F99</item>
+        <item name="colorSecondary">#C8C4D3</item>
+        <item name="colorOnPrimary">#312F38</item>
+        <item name="colorSurface">#1D1B20</item>
+        <item name="android:colorBackground">#141318</item>
+        <item name="android:textColorPrimary">#E6E1E5</item>
+        <item name="android:textColorSecondary">#CAC4D0</item>
+    </style>
+
+    <style name="ThemeOverlay.LimeFlow.Espresso">
+        <item name="colorPrimary">#D7CCC8</item>
+        <item name="colorPrimaryVariant">#A1887F</item>
+        <item name="colorSecondary">#BCAAA4</item>
+        <item name="colorOnPrimary">#3E2723</item>
+        <item name="colorSurface">#211D1B</item>
+        <item name="android:colorBackground">#1A1614</item>
+        <item name="android:textColorPrimary">#EDE0D4</item>
+        <item name="android:textColorSecondary">#D7CCC8</item>
+    </style>
+</resources>

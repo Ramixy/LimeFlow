@@ -1,0 +1,14 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Новые возможности
+      labels:
+        - enhancement
+    - title: Исправления
+      labels:
+        - bug
+    - title: Другие изменения
+      labels:
+        - "*"
