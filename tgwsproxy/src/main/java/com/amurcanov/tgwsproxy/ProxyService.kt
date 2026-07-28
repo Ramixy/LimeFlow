@@ -436,7 +436,7 @@ class ProxyService : Service() {
 
     private fun updateRunningState(isRunning: Boolean) {
         _isRunning.value = isRunning
-        ProxyTileService.requestSync(this)
+        ProxyTileSync.request(this)
     }
 
     private fun createNotificationChannel() {
