@@ -34,6 +34,7 @@
 
         <service
             android:name="com.amurcanov.tgwsproxy.ProxyTileService"
+            android:enabled="@bool/enable_quick_settings_tile"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true"
             android:icon="@drawable/ic_qs_proxy_t"
