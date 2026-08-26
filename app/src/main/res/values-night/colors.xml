@@ -13,5 +13,7 @@
     <color name="lime_ambient">#404696F5</color>
     <color name="lime_shard_one">#314696F5</color>
     <color name="lime_shard_two">#245BB3FF</color>
-    <color name="lime_grid">#28538BD7</color>
+    <color name="youtube_red">#FF5A6A</color>
+    <color name="youtube_red_soft">#33FF5A6A</color>
+    <color name="discord_blurple">#8B95F2</color>
 </resources>

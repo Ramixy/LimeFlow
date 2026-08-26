@@ -7,6 +7,7 @@ import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.widget.doAfterTextChanged
+import com.google.android.material.color.MaterialColors
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfiles
@@ -123,6 +124,9 @@ class StrategyBuilderActivity : AppCompatActivity() {
             binding.builderOobData,
             binding.builderTlsMinor,
             binding.builderUdpCount,
+            binding.builderUdpJunk,
+            binding.builderUdpJunkSize,
+            binding.builderHostScope,
             binding.builderPortFilter,
             binding.builderRequestRounds,
             binding.builderTimeout,
@@ -141,6 +145,7 @@ class StrategyBuilderActivity : AppCompatActivity() {
             binding.builderProtocolUdp,
             binding.builderProtocolIpv4,
             binding.builderTcpFastOpen,
+            binding.builderRandomizeFake,
             binding.builderDropSack,
         ).forEach { toggle ->
             toggle.setOnCheckedChangeListener { _, _ -> updatePreview() }
@@ -154,6 +159,8 @@ class StrategyBuilderActivity : AppCompatActivity() {
         secondaryMethod = selectedSecondaryMethod,
         secondaryPositions = binding.builderSecondaryPositions.text?.toString().orEmpty(),
         secondaryAnchor = selectedSecondaryAnchor,
+        hostScope = binding.builderHostScope.text?.toString().orEmpty(),
+        randomizeFake = binding.builderRandomizeFake.isChecked,
         tlsRecordEnabled = binding.builderTlsRecord.isChecked,
         tlsRecordPosition = binding.builderTlsPosition.text?.toString().orEmpty(),
         hostMixedCase = binding.builderHostMixedCase.isChecked,
@@ -165,6 +172,8 @@ class StrategyBuilderActivity : AppCompatActivity() {
         oobData = binding.builderOobData.text?.toString().orEmpty(),
         tlsMinor = binding.builderTlsMinor.text?.toString().orEmpty(),
         udpFakeCount = binding.builderUdpCount.text?.toString().orEmpty(),
+        udpJunkCount = binding.builderUdpJunk.text?.toString().orEmpty(),
+        udpJunkSize = binding.builderUdpJunkSize.text?.toString().orEmpty(),
         protocolTls = binding.builderProtocolTls.isChecked,
         protocolHttp = binding.builderProtocolHttp.isChecked,
         protocolUdp = binding.builderProtocolUdp.isChecked,
@@ -186,8 +195,13 @@ class StrategyBuilderActivity : AppCompatActivity() {
             getString(errorMessage(result.error))
         }
         binding.builderPreview.setTextColor(
-            getColor(
-                if (result.isValid) R.color.app_text else R.color.app_error
+            MaterialColors.getColor(
+                binding.root,
+                if (result.isValid) {
+                    com.google.android.material.R.attr.colorOnSurface
+                } else {
+                    com.google.android.material.R.attr.colorError
+                },
             )
         )
     }
@@ -207,6 +221,9 @@ class StrategyBuilderActivity : AppCompatActivity() {
         binding.builderOobDataLayout.error = null
         binding.builderTlsMinorLayout.error = null
         binding.builderUdpCountLayout.error = null
+        binding.builderUdpJunkLayout.error = null
+        binding.builderUdpJunkSizeLayout.error = null
+        binding.builderHostScopeLayout.error = null
         binding.builderPortFilterLayout.error = null
         binding.builderRequestRoundsLayout.error = null
         binding.builderTimeoutLayout.error = null
@@ -227,6 +244,11 @@ class StrategyBuilderActivity : AppCompatActivity() {
                 StrategyBuildError.INVALID_OOB_DATA -> binding.builderOobDataLayout.error = message
                 StrategyBuildError.INVALID_TLS_MINOR -> binding.builderTlsMinorLayout.error = message
                 StrategyBuildError.INVALID_UDP_COUNT -> binding.builderUdpCountLayout.error = message
+                StrategyBuildError.INVALID_UDP_JUNK -> {
+                    binding.builderUdpJunkLayout.error = message
+                    binding.builderUdpJunkSizeLayout.error = message
+                }
+                StrategyBuildError.INVALID_HOST_SCOPE -> binding.builderHostScopeLayout.error = message
                 StrategyBuildError.INVALID_PORT_FILTER -> binding.builderPortFilterLayout.error = message
                 StrategyBuildError.INVALID_REQUEST_ROUNDS ->
                     binding.builderRequestRoundsLayout.error = message
@@ -262,6 +284,8 @@ class StrategyBuilderActivity : AppCompatActivity() {
         StrategyBuildError.INVALID_OOB_DATA -> R.string.strategy_error_oob_data
         StrategyBuildError.INVALID_TLS_MINOR -> R.string.strategy_error_tls_minor
         StrategyBuildError.INVALID_UDP_COUNT -> R.string.strategy_error_udp_count
+        StrategyBuildError.INVALID_UDP_JUNK -> R.string.strategy_error_udp_junk
+        StrategyBuildError.INVALID_HOST_SCOPE -> R.string.strategy_error_host_scope
         StrategyBuildError.INVALID_PORT_FILTER -> R.string.strategy_error_port_filter
         StrategyBuildError.INVALID_REQUEST_ROUNDS -> R.string.strategy_error_request_rounds
         StrategyBuildError.INVALID_TIMEOUT -> R.string.strategy_error_timeout

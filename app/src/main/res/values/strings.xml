@@ -9,6 +9,7 @@
     <string name="profile_label">ПРОФИЛЬ</string>
     <string name="profile_name">ALT11 · универсальный</string>
     <string name="profile_summary">%1$s · %2$s</string>
+    <string name="profile_summary_score">%1$s · %2$s</string>
     <string name="back_symbol" translatable="false">‹</string>
     <string name="forward_symbol" translatable="false">›</string>
     <string name="add_symbol" translatable="false">+</string>
@@ -35,7 +36,7 @@
     <string name="strategies">Стратегии</string>
     <string name="theme">Тема</string>
     <string name="choose_strategy">Выбор стратегии</string>
-    <string name="strategy_search">Найти ALT или метод</string>
+    <string name="strategy_search">Найти YouTube, Discord или метод</string>
     <string name="theme_system">Как в телефоне · системная палитра</string>
     <string name="theme_light">Светлая</string>
     <string name="theme_dark">Тёмная</string>
@@ -52,7 +53,7 @@
     <string name="tile_active">Подключено</string>
     <string name="tile_inactive">Выключено</string>
     <string name="smart_test">Подобрать автоматически</string>
-    <string name="smart_test_hint">26 встроенных и свои профили · единая проверка YouTube и Discord</string>
+    <string name="smart_test_hint">YouTube, Discord, операторы</string>
     <string name="smart_testing">Проверка %1$s · %2$d/%3$d</string>
     <string name="smart_success">Выбран профиль %1$s</string>
     <string name="smart_failed">YouTube и Discord не ответили через проверенные профили. Интернет при этом может работать — попробуйте ALT11 или GENERAL вручную.</string>
@@ -64,6 +65,18 @@
     <string name="smart_top_youtube">Лучшие для YouTube</string>
     <string name="smart_top_discord">Лучшие для Discord</string>
     <string name="smart_tops_title">Топ стратегий</string>
+    <string name="youtube_featured_title">YouTube на Wi-Fi</string>
+    <string name="youtube_featured_subtitle">LIMEFLOW YOUTUBE · junk-пакеты и fake TLS, чтобы видео открывалось и дома, и в LTE</string>
+    <string name="youtube_featured_action">Выбрать</string>
+    <string name="strategy_filter_all">Все</string>
+    <string name="strategy_filter_youtube">YouTube</string>
+    <string name="strategy_filter_discord">Discord</string>
+    <string name="strategy_filter_operator">Сети</string>
+    <string name="strategy_filter_other">Остальные</string>
+    <string name="strategy_builder_udp_junk">Мусорные UDP-пакеты (0–64)</string>
+    <string name="strategy_builder_udp_junk_size">Размер junk, байт (64–320)</string>
+    <string name="strategy_builder_udp_junk_hint">Junk-поезд как в 1.1.7: Jc случайных UDP-датаграмм размера Jmin–Jmax перед настоящим пакетом. Без I1–I5 — они глушили прокси и ломали проверки.</string>
+    <string name="strategy_error_udp_junk">Junk: 0–64 пакетов, размер 16–1024 байт.</string>
     <string name="smart_tops_show">Развернуть ▼</string>
     <string name="smart_tops_hide">Свернуть ▲</string>
     <string name="smart_choose_result">Нажмите на стратегию в списке, чтобы применить её.</string>
@@ -155,7 +168,7 @@
     <string name="smart_focus_discord">Лучше для Discord</string>
     <string name="smart_focus_balanced">Универсальная</string>
     <string name="smart_saved_results">Сохранённый рейтинг · проверено профилей: %1$d</string>
-    <string name="smart_test_single">Проверить только эту стратегию</string>
+    <string name="smart_test_single">Тест</string>
     <string name="app_filter_title">Фильтр приложений</string>
     <string name="app_filter_summary">Выберите, какие приложения проходят через LimeFlow</string>
     <string name="app_filter_all">Обрабатывать все приложения</string>
@@ -163,6 +176,31 @@
     <string name="app_filter_include">Обрабатывать только выбранные</string>
     <string name="app_filter_search">Поиск приложения</string>
     <string name="app_filter_selected">Выбрано приложений: %1$d · изменения применятся при следующем подключении</string>
+    <string name="host_list_title">Список сайтов</string>
+    <string name="host_list_summary">Desync только для отмеченных доменов</string>
+    <string name="host_list_hint">Отмеченные сайты идут через обход DPI. Остальные — без desync. По умолчанию все включены.</string>
+    <string name="host_list_search">Поиск сайта</string>
+    <string name="host_list_add">Добавить</string>
+    <string name="host_list_add_hint">example.com</string>
+    <string name="host_list_invalid">Введите обычный домен, например youtube.com</string>
+    <string name="host_list_selected">Включено: %1$d из %2$d · применится при следующем подключении</string>
+    <string name="host_select_all">Все</string>
+    <string name="host_select_none">Снять</string>
+    <string name="host_group_all">Все</string>
+    <string name="host_group_other">Остальные</string>
+    <string name="host_kind_custom">Свой сайт</string>
+    <string name="apply_best">Применить лучшую</string>
+    <string name="apply_best_summary">Лучший результат: %1$s · %2$d/%3$d</string>
+    <string name="pin_strategy">Закрепить</string>
+    <string name="copy_strategy">Копировать команду</string>
+    <string name="strategy_copied">Команда стратегии скопирована</string>
+    <string name="network_strategy_title">Другая сеть</string>
+    <string name="network_strategy_message">Для %1$s раньше работала «%2$s». Переключить?</string>
+    <string name="network_strategy_switch">Переключить</string>
+    <string name="battery_prompt_title">Фон для VPN</string>
+    <string name="battery_prompt_message">Чтобы LimeFlow не засыпал в фоне, разрешите работу без ограничений батареи. Это локальный обход DPI, не шифрование VPN.</string>
+    <string name="battery_prompt_allow">Разрешить</string>
+    <string name="battery_prompt_later">Позже</string>
     <string name="custom_strategy_add">Добавить стратегию</string>
     <string name="custom_strategy_edit">Изменить</string>
     <string name="custom_strategy_delete">Удалить</string>
@@ -213,6 +251,8 @@
     <string name="strategy_protocol_http">HTTP</string>
     <string name="strategy_protocol_udp">UDP</string>
     <string name="strategy_protocol_ipv4">Только IPv4</string>
+    <string name="strategy_builder_host_scope">Домены (необязательно)</string>
+    <string name="strategy_builder_host_scope_hint">Стратегия применится только к этим доменам, остальной трафик пойдёт без изменений. Разделяйте пробелами или переносами строк.</string>
     <string name="strategy_builder_port_filter">Порт или диапазон</string>
     <string name="strategy_builder_request_rounds">Запрос или диапазон</string>
     <string name="strategy_builder_timeout">Таймаут первого ответа, сек. (0.1–120)</string>
@@ -228,6 +268,8 @@
     <string name="strategy_builder_oob_data">OOB-байт</string>
     <string name="strategy_builder_oob_data_hint">Один символ либо \\n, \\0 или \\xNN.</string>
     <string name="strategy_builder_udp_count">Количество ложных UDP-пакетов (0–100)</string>
+    <string name="strategy_builder_randomize_fake">Случайный ложный ClientHello</string>
+    <string name="strategy_builder_randomize_fake_hint">Заполняет SessionID, Random и KeyExchange случайными данными, чтобы DPI не опознал стандартный ложный пакет.</string>
     <string name="strategy_builder_drop_sack">Удалять TCP SACK</string>
     <string name="strategy_builder_advanced">Дополнительные параметры</string>
     <string name="strategy_builder_advanced_hint">Необязательно. Каждый параметр должен начинаться с «-».</string>
@@ -255,6 +297,7 @@
     <string name="strategy_error_oob_data">Укажите один символ либо escape-байт \\n, \\0 или \\xNN.</string>
     <string name="strategy_error_tls_minor">TLS minor должен быть числом от 0 до 255.</string>
     <string name="strategy_error_udp_count">Количество должно быть числом от 0 до 100.</string>
+    <string name="strategy_error_host_scope">Укажите домены вида example.com, разделяя их пробелами или переносами строк.</string>
     <string name="strategy_error_port_filter">Порт должен быть от 1 до 65535; диапазон задаётся через дефис.</string>
     <string name="strategy_error_request_rounds">Номер запроса должен быть от 1 до 999.</string>
     <string name="strategy_error_timeout">Таймаут должен быть от 0.1 до 120 секунд.</string>

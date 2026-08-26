@@ -5,14 +5,19 @@ import android.animation.ValueAnimator
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.res.ColorStateList
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
@@ -152,7 +157,7 @@ class MainActivity : AppCompatActivity() {
         applyLimeFlowPalette()
         super.onCreate(savedInstanceState)
 
-        installAlt11Defaults()
+        installEngineDefaults()
         AppFilterActivity.ensureTelegramExcludedByDefault(getPreferences())
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -185,6 +190,10 @@ class MainActivity : AppCompatActivity() {
         }
         binding.statusButtonCard.setOnClickListener { binding.statusButton.performClick() }
         binding.strategyButton.setOnClickListener { openProfiles() }
+        binding.strategyButton.setOnLongClickListener {
+            copyCurrentStrategy()
+            true
+        }
         binding.flowModeAction.setOnClickListener { showModePicker() }
         binding.flowAppsAction.setOnClickListener { showAppModePicker() }
         binding.flowTelegramAction.setOnClickListener { toggleTelegramFiltering() }
@@ -212,6 +221,7 @@ class MainActivity : AppCompatActivity() {
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
+        maybePromptBatteryExemption()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -227,18 +237,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun installAlt11Defaults() {
+    /*
+     * Re-applies the stored profile so an upgrade picks up rewritten strategy arguments:
+     * byedpi_cmd_args is a flattened copy of them, not a reference. Bump the version
+     * whenever the catalog's argument strings change.
+     */
+    private fun installEngineDefaults() {
         val preferences = getPreferences()
-        if (preferences.getInt("limeflow_engine_version", 0) >= 7) return
+        if (preferences.getInt("limeflow_engine_version", 0) >= 12) return
 
         preferences.edit()
             .putString("byedpi_mode", "vpn")
             .putBoolean("byedpi_enable_cmd_settings", true)
             .putBoolean("ipv6_enable", true)
-            .putBoolean("alt11_defaults_installed", true)
-            .putInt("limeflow_engine_version", 7)
+            .putInt("limeflow_engine_version", 12)
             .apply()
         FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
+        BypassHosts.writeHostFile(this, preferences)
     }
 
     private fun ensureUnifiedAppearanceDefaults() {
@@ -258,12 +273,14 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val profile = FlowsealProfiles.selected(getPreferences())
-        binding.strategyButtonText.text = getString(
-            R.string.profile_summary,
-            profile.name,
-            profile.method,
-        )
+        val score = StrategyMemory.scoreFor(getPreferences(), profile.id)
+        binding.strategyButtonText.text = if (score != null) {
+            getString(R.string.profile_summary_score, profile.name, score.label)
+        } else {
+            getString(R.string.profile_summary, profile.name, profile.method)
+        }
         updateStatus()
+        maybeOfferNetworkStrategy()
     }
 
     private fun appearanceSignature(): String = getPreferences().run {
@@ -281,6 +298,76 @@ class MainActivity : AppCompatActivity() {
             return
         }
         startActivity(Intent(this, ProfilePickerActivity::class.java))
+    }
+
+    private fun copyCurrentStrategy() {
+        val profile = FlowsealProfiles.selected(getPreferences())
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(profile.name, profile.arguments))
+        Toast.makeText(this, R.string.strategy_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun maybeOfferNetworkStrategy() {
+        val preferences = getPreferences()
+        val type = if (StrategyMemory.onWifi(this)) "wifi" else "mobile"
+        val last = preferences.getString(StrategyMemory.NETWORK_HINT_KEY, null)
+        if (last == null) {
+            preferences.edit().putString(StrategyMemory.NETWORK_HINT_KEY, type).apply()
+            return
+        }
+        if (last == type) return
+        preferences.edit().putString(StrategyMemory.NETWORK_HINT_KEY, type).apply()
+        val rememberedId = StrategyMemory.rememberedForCurrentNetwork(this, preferences) ?: return
+        val current = FlowsealProfiles.selected(preferences)
+        if (rememberedId == current.id) return
+        val remembered = FlowsealProfiles.catalog(preferences)
+            .firstOrNull { it.id == rememberedId } ?: return
+        AlertDialog.Builder(this)
+            .setTitle(R.string.network_strategy_title)
+            .setMessage(
+                getString(
+                    R.string.network_strategy_message,
+                    StrategyMemory.networkLabel(this),
+                    remembered.name,
+                )
+            )
+            .setNegativeButton(R.string.custom_strategy_cancel, null)
+            .setPositiveButton(R.string.network_strategy_switch) { _, _ ->
+                FlowsealProfiles.select(preferences, remembered)
+                binding.strategyButtonText.text = getString(
+                    R.string.profile_summary,
+                    remembered.name,
+                    remembered.method,
+                )
+            }
+            .show()
+    }
+
+    private fun maybePromptBatteryExemption() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val preferences = getPreferences()
+        if (preferences.getBoolean(StrategyMemory.BATTERY_PROMPTED_KEY, false)) return
+        val power = getSystemService(PowerManager::class.java) ?: return
+        if (power.isIgnoringBatteryOptimizations(packageName)) {
+            preferences.edit().putBoolean(StrategyMemory.BATTERY_PROMPTED_KEY, true).apply()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.battery_prompt_title)
+            .setMessage(R.string.battery_prompt_message)
+            .setNegativeButton(R.string.battery_prompt_later) { _, _ ->
+                preferences.edit().putBoolean(StrategyMemory.BATTERY_PROMPTED_KEY, true).apply()
+            }
+            .setPositiveButton(R.string.battery_prompt_allow) { _, _ ->
+                preferences.edit().putBoolean(StrategyMemory.BATTERY_PROMPTED_KEY, true).apply()
+                runCatching {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            .setData(Uri.parse("package:$packageName"))
+                    )
+                }
+            }
+            .show()
     }
 
     private fun showModePicker() {
@@ -579,7 +666,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun start() {
-        when (getPreferences().mode()) {
+        val preferences = getPreferences()
+        StrategyMemory.rememberForCurrentNetwork(
+            this,
+            preferences,
+            FlowsealProfiles.selected(preferences).id,
+        )
+        when (preferences.mode()) {
             Mode.VPN -> {
                 val intentPrepare = VpnService.prepare(this)
                 if (intentPrepare != null) {

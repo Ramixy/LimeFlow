@@ -29,8 +29,11 @@
 #include "packets.h"
 #include "error.h"
 
+#include <stdlib.h>
+
 #define DEFAULT_TTL 8
 #define ERR_WAIT -12
+#define UDP_JUNK_MAX 1024
 
 
 int setttl(int fd, int ttl)
@@ -703,6 +706,45 @@ int post_desync(int sfd, struct desync_params *dp)
 }
 
 
+/*
+ * AmneziaWG-style junk train: Jc datagrams of random size in [Jmin, Jmax].
+ * No sleep and no handshake filter — both stalled the proxy and killed tests.
+ */
+static int send_udp_junk_train(int sfd, struct desync_params *dp)
+{
+    if (dp->udp_junk_count <= 0) {
+        return 0;
+    }
+
+    int jmin = dp->udp_junk_min > 0 ? dp->udp_junk_min : 64;
+    int jmax = dp->udp_junk_max > 0 ? dp->udp_junk_max : 256;
+    if (jmin < 16) {
+        jmin = 16;
+    }
+    if (jmax > UDP_JUNK_MAX) {
+        jmax = UDP_JUNK_MAX;
+    }
+    if (jmin > jmax) {
+        jmin = jmax;
+    }
+
+    unsigned char junk[UDP_JUNK_MAX];
+    for (int i = 0; i < dp->udp_junk_count; i++) {
+        int size = jmin;
+        if (jmax > jmin) {
+            size = jmin + (rand() % (jmax - jmin + 1));
+        }
+        for (int b = 0; b < size; b++) {
+            junk[b] = (unsigned char)(rand() & 0xff);
+        }
+        if (send(sfd, (char *)junk, size, 0) < 0) {
+            uniperror("send");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 ssize_t desync_udp(int sfd, char *buffer, 
         ssize_t n, const struct sockaddr *dst, struct desync_params *dp)
 {
@@ -710,7 +752,7 @@ ssize_t desync_udp(int sfd, char *buffer,
         INIT_HEX_STR(buffer, (n > 16 ? 16 : n));
         LOG(LOG_S, "bytes: %s (%zd)\n", HEX_STR, n);
     }
-    if (dp->udp_fake_count != 0) {
+    if (dp->udp_fake_count != 0 || dp->udp_junk_count != 0) {
         struct packet pkt;
         if (dp->fake_data.data) {
             pkt = dp->fake_data;
@@ -735,6 +777,9 @@ ssize_t desync_udp(int sfd, char *buffer,
                 uniperror("send");
                 return -1;
             }
+        }
+        if (send_udp_junk_train(sfd, dp) < 0) {
+            return -1;
         }
         if (setttl(sfd, params.def_ttl) < 0) {
             return -1;

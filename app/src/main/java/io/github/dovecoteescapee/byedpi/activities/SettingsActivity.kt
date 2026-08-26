@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.dovecoteescapee.byedpi.BuildConfig
 import io.github.dovecoteescapee.byedpi.R
+import io.github.dovecoteescapee.byedpi.data.BypassHosts
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfiles
 import io.github.dovecoteescapee.byedpi.databinding.ActivitySettingsBinding
 import io.github.dovecoteescapee.byedpi.fragments.ByeDpiCommandLineSettingsFragment
@@ -166,6 +167,9 @@ class SettingsActivity : AppCompatActivity() {
         binding.appFilterCard.setOnClickListener {
             startActivity(Intent(this, AppFilterActivity::class.java))
         }
+        binding.hostListCard.setOnClickListener {
+            startActivity(Intent(this, HostListActivity::class.java))
+        }
         binding.strategiesCard.setOnClickListener {
             startActivity(Intent(this, ProfilePickerActivity::class.java))
         }
@@ -197,10 +201,7 @@ class SettingsActivity : AppCompatActivity() {
                         .putBoolean("byedpi_enable_cmd_settings", true)
                         .putBoolean("ipv6_enable", true)
                         .apply()
-                    FlowsealProfiles.select(
-                        getPreferences(),
-                        FlowsealProfiles.all.first { it.id == "alt11" },
-                    )
+                    FlowsealProfiles.select(getPreferences(), FlowsealProfiles.default)
                     AppFilterActivity.ensureTelegramExcludedByDefault(getPreferences())
                     recreate()
                 }
@@ -231,6 +232,9 @@ class SettingsActivity : AppCompatActivity() {
                 getString(R.string.filter_mode_exclude_summary, packages.size)
             else -> getString(R.string.filter_mode_all_summary)
         }
+        val hostsOn = BypassHosts.enabledCount(preferences)
+        val hostsTotal = BypassHosts.catalog(preferences).size
+        binding.hostListSummary.text = getString(R.string.host_list_selected, hostsOn, hostsTotal)
         binding.versionText.text = getString(
             R.string.version_summary,
             getString(R.string.version),

@@ -261,6 +261,23 @@
                         android:text="@string/strategy_protocol_ipv4"
                         android:textColor="@color/app_text" />
 
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/builder_host_scope_layout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/strategy_builder_host_scope"
+                        app:helperText="@string/strategy_builder_host_scope_hint">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/builder_host_scope"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="top|start"
+                            android:inputType="textMultiLine|textNoSuggestions"
+                            android:minLines="2" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -435,6 +452,53 @@
                         android:orientation="horizontal">
 
                         <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/builder_udp_junk_layout"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="5dp"
+                            android:layout_weight="1"
+                            android:hint="@string/strategy_builder_udp_junk">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/builder_udp_junk"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:maxLines="1" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/builder_udp_junk_size_layout"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="5dp"
+                            android:layout_weight="1"
+                            android:hint="@string/strategy_builder_udp_junk_size">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/builder_udp_junk_size"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:maxLines="1" />
+                        </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/strategy_builder_udp_junk_hint"
+                        android:textColor="@color/app_text_muted"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.textfield.TextInputLayout
                             android:id="@+id/builder_fake_offset_layout"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
@@ -500,9 +564,26 @@
                     </com.google.android.material.textfield.TextInputLayout>
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/builder_randomize_fake"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="50dp"
+                        android:text="@string/strategy_builder_randomize_fake"
+                        android:textColor="@color/app_text" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="@string/strategy_builder_randomize_fake_hint"
+                        android:textColor="@color/app_text_muted"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/builder_drop_sack"
                         android:layout_width="match_parent"
-                        android:layout_height="50dp"
+                        android:layout_height="wrap_content"
+                        android:minHeight="50dp"
                         android:text="@string/strategy_builder_drop_sack"
                         android:textColor="@color/app_text" />
                 </LinearLayout>

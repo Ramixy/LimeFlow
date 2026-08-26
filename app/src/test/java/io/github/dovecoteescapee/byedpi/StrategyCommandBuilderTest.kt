@@ -5,6 +5,7 @@ import io.github.dovecoteescapee.byedpi.data.StrategyBuildError
 import io.github.dovecoteescapee.byedpi.data.StrategyCommandBuilder
 import io.github.dovecoteescapee.byedpi.data.StrategyDraft
 import io.github.dovecoteescapee.byedpi.data.StrategyMethod
+import io.github.dovecoteescapee.byedpi.utility.shellSplit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,10 +83,30 @@ class StrategyCommandBuilderTest {
 
         assertTrue(result.isValid)
         assertEquals(
-            "-Ktu -V443 -R1-3 -T2.5 -F -s1+s -d3+h -t6 " +
+            "-Kt,u -V443 -R1-3 -T2.5 -F -s1+s -d3+h -t6 " +
                 "-O-1+s -nwww.iana.org -e\\x0a -m3",
             result.command,
         )
+    }
+
+    /*
+     * The engine parses -K one letter at a time and then jumps to the next comma, so an
+     * uncommaed list would quietly drop every protocol after the first.
+     */
+    @Test
+    fun separatesEverySelectedProtocolWithACommaSoNoneAreDropped() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                method = StrategyMethod.SPLIT,
+                positions = "1",
+                protocolTls = true,
+                protocolHttp = true,
+                protocolUdp = true,
+                protocolIpv4 = true,
+            )
+        )
+
+        assertEquals("-Kt,h,u,i -s1", result.command)
     }
 
     @Test
@@ -107,5 +128,89 @@ class StrategyCommandBuilderTest {
         )
 
         assertEquals("--fake -1 --ttl 8", result.command)
+    }
+
+    @Test
+    fun quotesTheHostScopeSoItStaysOneArgument() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                method = StrategyMethod.SPLIT,
+                positions = "1",
+                anchor = PositionAnchor.SNI,
+                hostScope = "youtube.com  googlevideo.com\nytimg.com",
+            )
+        )
+
+        assertTrue(result.isValid)
+        assertEquals("-H:\"youtube.com googlevideo.com ytimg.com\" -s1+s", result.command)
+    }
+
+    @Test
+    fun quotedHostScopeSurvivesRoundTripThroughShellSplit() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                method = StrategyMethod.OOB,
+                positions = "1",
+                hostScope = "discord.com discordapp.net",
+            )
+        )
+
+        val args = shellSplit(result.command)
+        assertEquals(listOf("-H:discord.com discordapp.net", "-o1"), args)
+    }
+
+    @Test
+    fun rejectsAMalformedHostScope() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                method = StrategyMethod.SPLIT,
+                positions = "1",
+                hostScope = "youtube.com not a domain!",
+            )
+        )
+
+        assertEquals(StrategyBuildError.INVALID_HOST_SCOPE, result.error)
+    }
+
+    @Test
+    fun emitsAmneziaStyleUdpJunk() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                method = StrategyMethod.FAKE,
+                positions = "-1",
+                randomizeFake = true,
+                udpJunkCount = "8",
+                udpJunkSize = "64-320",
+            )
+        )
+
+        assertTrue(result.isValid)
+        assertEquals("-f-1 -Qr -J8 -G64-320", result.command)
+    }
+
+    @Test
+    fun rejectsAnInvalidJunkRange() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                udpJunkCount = "4",
+                udpJunkSize = "400-80",
+            )
+        )
+
+        assertEquals(StrategyBuildError.INVALID_UDP_JUNK, result.error)
+    }
+
+    @Test
+    fun emitsTheRandomisedFakeFlag() {
+        val result = StrategyCommandBuilder.build(
+            StrategyDraft(
+                method = StrategyMethod.FAKE,
+                positions = "-1",
+                randomizeFake = true,
+                fakeTtl = "8",
+            )
+        )
+
+        assertEquals("-f-1 -Qr -t8", result.command)
     }
 }

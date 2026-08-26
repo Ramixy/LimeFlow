@@ -40,6 +40,12 @@
             android:summary="@string/app_filter_summary"
             android:icon="@drawable/ic_apps_filter" />
 
+        <Preference
+            android:key="bypass_host_list"
+            android:title="@string/host_list_title"
+            android:summary="@string/host_list_summary"
+            android:icon="@drawable/ic_hosts" />
+
     </androidx.preference.PreferenceCategory>
 
     <androidx.preference.PreferenceCategory
