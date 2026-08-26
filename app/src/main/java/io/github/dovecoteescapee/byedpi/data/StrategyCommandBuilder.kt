@@ -7,6 +7,8 @@ data class StrategyDraft(
     val secondaryMethod: StrategyMethod = StrategyMethod.NONE,
     val secondaryPositions: String = "",
     val secondaryAnchor: PositionAnchor = PositionAnchor.ABSOLUTE,
+    val hostScope: String = "",
+    val randomizeFake: Boolean = false,
     val tlsRecordEnabled: Boolean = false,
     val tlsRecordPosition: String = "1",
     val hostMixedCase: Boolean = false,
@@ -18,6 +20,8 @@ data class StrategyDraft(
     val oobData: String = "",
     val tlsMinor: String = "",
     val udpFakeCount: String = "",
+    val udpJunkCount: String = "",
+    val udpJunkSize: String = "",
     val protocolTls: Boolean = false,
     val protocolHttp: Boolean = false,
     val protocolUdp: Boolean = false,
@@ -66,6 +70,8 @@ enum class StrategyBuildError {
     INVALID_OOB_DATA,
     INVALID_TLS_MINOR,
     INVALID_UDP_COUNT,
+    INVALID_UDP_JUNK,
+    INVALID_HOST_SCOPE,
     INVALID_PORT_FILTER,
     INVALID_REQUEST_ROUNDS,
     INVALID_TIMEOUT,
@@ -79,17 +85,33 @@ object StrategyCommandBuilder {
     private val rangePattern = Regex("""^\d+(?:-\d+)?$""")
     private val fakeSniPattern = Regex("""^[A-Za-z0-9.*?#_-]+$""")
     private val escapedBytePattern = Regex("""^\\(?:[0nrt]|x[0-9A-Fa-f]{2})$""")
+    private val domainPattern = Regex("""^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$""")
 
     fun build(draft: StrategyDraft): StrategyBuildResult {
         val parts = mutableListOf<String>()
 
-        val protocols = buildString {
-            if (draft.protocolTls) append('t')
-            if (draft.protocolHttp) append('h')
-            if (draft.protocolUdp) append('u')
-            if (draft.protocolIpv4) append('i')
+        /*
+         * Must be comma separated: the engine reads one letter, then skips ahead to the next
+         * comma, so a concatenated "tu" would silently apply TLS only and drop UDP.
+         */
+        val protocols = buildList {
+            if (draft.protocolTls) add("t")
+            if (draft.protocolHttp) add("h")
+            if (draft.protocolUdp) add("u")
+            if (draft.protocolIpv4) add("i")
         }
-        if (protocols.isNotEmpty()) parts += "-K$protocols"
+        if (protocols.isNotEmpty()) parts += "-K${protocols.joinToString(",")}"
+
+        /*
+         * Passed inline with a ':' prefix so no list file has to be shipped. Quoted because
+         * the domains are space separated and must reach the engine as a single argument.
+         */
+        splitPositions(draft.hostScope).takeIf { it.isNotEmpty() }?.let { domains ->
+            if (domains.any { !domainPattern.matches(it) }) {
+                return StrategyBuildResult(error = StrategyBuildError.INVALID_HOST_SCOPE)
+            }
+            parts += "-H:\"${domains.joinToString(" ")}\""
+        }
 
         draft.portFilter.trim().takeIf { it.isNotEmpty() }?.let { value ->
             if (!validRange(value, 1..65535)) {
@@ -150,6 +172,12 @@ object StrategyCommandBuilder {
             parts += "-M${httpModifiers.joinToString(",")}"
         }
 
+        /*
+         * Randomises SessionID/Random/KeyExchange in the decoy ClientHello. The engine's
+         * built-in fake is a fixed byte sequence that current DPI matches on directly.
+         */
+        if (draft.randomizeFake) parts += "-Qr"
+
         draft.fakeTtl.trim().takeIf { it.isNotEmpty() }?.let { value ->
             val ttl = value.toIntOrNull()
             if (ttl == null || ttl !in 1..255) {
@@ -193,6 +221,21 @@ object StrategyCommandBuilder {
                 return StrategyBuildResult(error = StrategyBuildError.INVALID_UDP_COUNT)
             }
             if (count > 0) parts += "-a$count"
+        }
+
+        draft.udpJunkCount.trim().takeIf { it.isNotEmpty() }?.let { value ->
+            val count = value.toIntOrNull()
+            if (count == null || count !in 0..64) {
+                return StrategyBuildResult(error = StrategyBuildError.INVALID_UDP_JUNK)
+            }
+            if (count > 0) {
+                parts += "-J$count"
+                val size = draft.udpJunkSize.trim().ifEmpty { "64-256" }
+                if (!validJunkSize(size)) {
+                    return StrategyBuildResult(error = StrategyBuildError.INVALID_UDP_JUNK)
+                }
+                parts += "-G$size"
+            }
         }
 
         if (draft.dropSack) parts += "-Y"
@@ -239,6 +282,13 @@ object StrategyCommandBuilder {
         if (!rangePattern.matches(value)) return false
         val values = value.split('-').mapNotNull(String::toIntOrNull)
         if (values.isEmpty() || values.any { it !in bounds }) return false
+        return values.size == 1 || values[0] <= values[1]
+    }
+
+    private fun validJunkSize(value: String): Boolean {
+        if (!rangePattern.matches(value)) return false
+        val values = value.split('-').mapNotNull(String::toIntOrNull)
+        if (values.isEmpty() || values.any { it !in 16..1024 }) return false
         return values.size == 1 || values[0] <= values[1]
     }
 }

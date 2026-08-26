@@ -1,5 +1,9 @@
 package io.github.dovecoteescapee.byedpi.activities
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.Build
 import android.text.Editable
@@ -8,17 +12,23 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.transition.TransitionManager
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyCmdPreferences
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfiles
+import io.github.dovecoteescapee.byedpi.data.ProfileKind
+import io.github.dovecoteescapee.byedpi.data.StrategyMemory
 import io.github.dovecoteescapee.byedpi.databinding.ActivityProfilePickerBinding
 import io.github.dovecoteescapee.byedpi.databinding.ItemProfileBinding
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
@@ -53,7 +63,8 @@ class ProfilePickerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityProfilePickerBinding
     private lateinit var adapter: ProfileAdapter
     private var testJob: Job? = null
-    private var topsExpanded = true
+    private var topsExpanded = false
+    private var pendingBest: FlowsealProfile? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyLimeFlowPalette()
@@ -63,22 +74,37 @@ class ProfilePickerActivity : AppCompatActivity() {
 
         adapter = ProfileAdapter(
             profiles = FlowsealProfiles.catalog(getPreferences()),
+            pinnedIds = StrategyMemory.pinned(getPreferences()),
             onClick = select@ { profile ->
                 if (testJob?.isActive == true) return@select
-                FlowsealProfiles.select(getPreferences(), profile)
-                setResult(RESULT_OK)
-                finish()
+                applyProfile(profile)
             },
             onTest = test@ { profile ->
                 if (testJob?.isActive == true) return@test
                 runStrategyTest(listOf(profile))
+            },
+            onPin = { profile ->
+                StrategyMemory.togglePin(getPreferences(), profile.id)
+                adapter.setPinned(StrategyMemory.pinned(getPreferences()))
             },
             onEdit = { profile -> showCustomStrategyDialog(profile) },
             onDelete = { profile -> confirmDeleteCustom(profile) },
         )
         binding.profileList.layoutManager = LinearLayoutManager(this)
         binding.profileList.adapter = adapter
-        topsExpanded = getPreferences().getBoolean(TOPS_EXPANDED_KEY, true)
+        binding.youtubeFeaturedCard.setOnClickListener {
+            if (testJob?.isActive == true) return@setOnClickListener
+            val youtube = FlowsealProfiles.catalog(getPreferences())
+                .firstOrNull { it.id == "limeflow_youtube" } ?: return@setOnClickListener
+            applyProfile(youtube)
+        }
+        binding.chipAll.setOnClickListener { setCatalogFilter(CatalogFilter.ALL) }
+        binding.chipYoutube.setOnClickListener { setCatalogFilter(CatalogFilter.YOUTUBE) }
+        binding.chipDiscord.setOnClickListener { setCatalogFilter(CatalogFilter.DISCORD) }
+        binding.chipOperator.setOnClickListener { setCatalogFilter(CatalogFilter.OPERATOR) }
+        binding.chipOther.setOnClickListener { setCatalogFilter(CatalogFilter.OTHER) }
+        setCatalogFilter(CatalogFilter.ALL)
+        topsExpanded = getPreferences().getBoolean(TOPS_EXPANDED_KEY, false)
         binding.serviceTopsCard.setOnClickListener {
             topsExpanded = !topsExpanded
             getPreferences().edit().putBoolean(TOPS_EXPANDED_KEY, topsExpanded).apply()
@@ -86,6 +112,18 @@ class ProfilePickerActivity : AppCompatActivity() {
         }
         restoreSavedResults()
         binding.backButton.setOnClickListener { finish() }
+        binding.hostsButton.setOnClickListener {
+            startActivity(Intent(this, HostListActivity::class.java))
+        }
+        binding.copyStrategyButton.setOnClickListener {
+            copyStrategy(FlowsealProfiles.selected(getPreferences()))
+        }
+        binding.applyBestButton.setOnClickListener {
+            pendingBest?.let { applyProfile(it) }
+        }
+        binding.applyBestCard.setOnClickListener {
+            pendingBest?.let { applyProfile(it) }
+        }
         binding.smartTestButton.setOnClickListener {
             if (testJob?.isActive == true) {
                 testJob?.cancel()
@@ -116,6 +154,85 @@ class ProfilePickerActivity : AppCompatActivity() {
         super.onResume()
         if (::adapter.isInitialized) {
             adapter.replaceProfiles(FlowsealProfiles.catalog(getPreferences()))
+            adapter.setPinned(StrategyMemory.pinned(getPreferences()))
+        }
+    }
+
+    private fun applyProfile(profile: FlowsealProfile) {
+        val preferences = getPreferences()
+        FlowsealProfiles.select(preferences, profile)
+        StrategyMemory.rememberForCurrentNetwork(this, preferences, profile.id)
+        setResult(RESULT_OK)
+        finish()
+    }
+
+    private fun copyStrategy(profile: FlowsealProfile) {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText(profile.name, profile.arguments))
+        Toast.makeText(this, R.string.strategy_copied, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showApplyBest(ranked: List<ProfileTestResult>) {
+        val best = ranked.maxWithOrNull(profileResultComparator) ?: run {
+            binding.applyBestCard.visibility = View.GONE
+            pendingBest = null
+            return
+        }
+        if (best.protocolSuccess <= 0) {
+            binding.applyBestCard.visibility = View.GONE
+            pendingBest = null
+            return
+        }
+        pendingBest = best.profile
+        binding.applyBestCard.visibility = View.VISIBLE
+        binding.applyBestLabel.text = getString(
+            R.string.apply_best_summary,
+            best.profile.name,
+            best.protocolSuccess,
+            PROTOCOL_TEST_COUNT,
+        )
+    }
+
+    private fun setCatalogFilter(filter: CatalogFilter) {
+        adapter.setKindFilter(filter)
+        binding.youtubeFeaturedCard.visibility =
+            if (filter == CatalogFilter.ALL || filter == CatalogFilter.YOUTUBE) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        styleChip(binding.chipAll, filter == CatalogFilter.ALL)
+        styleChip(binding.chipYoutube, filter == CatalogFilter.YOUTUBE, youtube = true)
+        styleChip(binding.chipDiscord, filter == CatalogFilter.DISCORD)
+        styleChip(binding.chipOperator, filter == CatalogFilter.OPERATOR)
+        styleChip(binding.chipOther, filter == CatalogFilter.OTHER)
+    }
+
+    private fun styleChip(chip: MaterialButton, active: Boolean, youtube: Boolean = false) {
+        val primary = MaterialColors.getColor(chip, com.google.android.material.R.attr.colorPrimary)
+        val onPrimary = MaterialColors.getColor(chip, com.google.android.material.R.attr.colorOnPrimary)
+        val muted = ContextCompat.getColor(this, R.color.app_text)
+        val surface = ContextCompat.getColor(this, R.color.app_surface)
+        val youtubeRed = ContextCompat.getColor(this, R.color.youtube_red)
+        when {
+            active && youtube -> {
+                chip.backgroundTintList = android.content.res.ColorStateList.valueOf(youtubeRed)
+                chip.setTextColor(onPrimary)
+                chip.strokeWidth = 0
+            }
+            active -> {
+                chip.backgroundTintList = android.content.res.ColorStateList.valueOf(primary)
+                chip.setTextColor(onPrimary)
+                chip.strokeWidth = 0
+            }
+            else -> {
+                chip.backgroundTintList = android.content.res.ColorStateList.valueOf(surface)
+                chip.setTextColor(muted)
+                chip.strokeColor = android.content.res.ColorStateList.valueOf(
+                    ContextCompat.getColor(this, R.color.app_stroke)
+                )
+                chip.strokeWidth = 2
+            }
         }
     }
 
@@ -142,6 +259,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         binding.smartProgress.progress = 0
         binding.smartTestStatus.setText(R.string.smart_stop_hint)
         binding.searchInput.isEnabled = false
+        binding.applyBestCard.visibility = View.GONE
         adapter.beginTesting(clearResults = profiles.size > 1)
 
         testJob = lifecycleScope.launch {
@@ -172,6 +290,7 @@ class ProfilePickerActivity : AppCompatActivity() {
                 adapter.showRanked(ranked)
                 persistResults(ranked)
                 updateTopResults(ranked)
+                showApplyBest(ranked)
                 binding.smartProgress.progress = profiles.size
                 binding.smartTestStatus.text = getString(
                     R.string.smart_results,
@@ -201,6 +320,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         val ranked = saved.sortedWith(profileResultComparator)
         adapter.showRanked(ranked)
         updateTopResults(ranked)
+        showApplyBest(ranked)
         binding.smartTestStatus.text = getString(R.string.smart_saved_results, ranked.size)
     }
 
@@ -208,12 +328,16 @@ class ProfilePickerActivity : AppCompatActivity() {
         val payload = JSONObject().apply {
             put("version", RESULT_FORMAT_VERSION)
             put("savedAt", System.currentTimeMillis())
+            put("protocolTotal", PROTOCOL_TEST_COUNT)
+            put("pingTotal", PING_TEST_COUNT)
             put("results", JSONArray().apply {
                 results.forEach { result ->
                     put(JSONObject().apply {
                         put("profileId", result.profile.id)
                         put("protocolSuccess", result.protocolSuccess)
+                        put("protocolTotal", PROTOCOL_TEST_COUNT)
                         put("pingSuccess", result.pingSuccess)
+                        put("pingTotal", PING_TEST_COUNT)
                         put("averagePingMs", result.averagePingMs ?: JSONObject.NULL)
                         put("targets", JSONArray().apply {
                             result.targetResults.forEach { target ->
@@ -599,22 +723,43 @@ class ProfilePickerActivity : AppCompatActivity() {
 
     private class ProfileAdapter(
         profiles: List<FlowsealProfile>,
+        private var pinnedIds: Set<String>,
         private val onClick: (FlowsealProfile) -> Unit,
         private val onTest: (FlowsealProfile) -> Unit,
+        private val onPin: (FlowsealProfile) -> Unit,
         private val onEdit: (FlowsealProfile) -> Unit,
         private val onDelete: (FlowsealProfile) -> Unit,
     ) : RecyclerView.Adapter<ProfileAdapter.Holder>() {
         private var catalog = profiles
         private var query = ""
         private var testing = false
-        private var source = profiles.map { ProfileRow(it) }
-        private var visible = source
+        private var kindFilter = CatalogFilter.ALL
         private val expandedIds = mutableSetOf<String>()
+        private val rowComparator =
+            compareByDescending<ProfileRow> { it.profile.id in pinnedIds }
+                .thenByDescending { it.result != null }
+                .thenByDescending { it.result?.protocolSuccess ?: -1 }
+                .thenByDescending { it.result?.pingSuccess ?: -1 }
+                .thenBy { it.result?.averagePingMs ?: Double.MAX_VALUE }
+        private var source = profiles.map { ProfileRow(it) }.sortedWith(rowComparator)
+        private var visible = source
+
+        fun setKindFilter(filter: CatalogFilter) {
+            kindFilter = filter
+            rebuildVisible()
+        }
+
+        fun setPinned(ids: Set<String>) {
+            pinnedIds = ids
+            source = source.sortedWith(rowComparator)
+            rebuildVisible()
+        }
 
         fun replaceProfiles(profiles: List<FlowsealProfile>) {
             val results = source.mapNotNull { row -> row.result?.let { row.profile.id to it } }.toMap()
             catalog = profiles
             source = profiles.map { profile -> ProfileRow(profile, results[profile.id]) }
+                .sortedWith(rowComparator)
             rebuildVisible()
         }
 
@@ -634,7 +779,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         fun updateResult(result: ProfileTestResult) {
             source = source.map {
                 if (it.profile.id == result.profile.id) it.copy(result = result) else it
-            }.sortedWith(resultComparator)
+            }.sortedWith(rowComparator)
             rebuildVisible()
         }
 
@@ -643,21 +788,29 @@ class ProfilePickerActivity : AppCompatActivity() {
             val byProfile = results.associateBy { it.profile.id }
             source = catalog.map { profile ->
                 ProfileRow(profile, byProfile[profile.id])
-            }.sortedWith(resultComparator)
+            }.sortedWith(rowComparator)
             rebuildVisible()
         }
 
         private fun rebuildVisible() {
-            visible = if (query.isEmpty()) {
-                source
-            } else {
-                source.filter {
-                    "${it.profile.name} ${it.profile.method} ${it.profile.description}"
-                        .lowercase()
-                        .contains(query)
-                }
+            visible = source.filter { row ->
+                matchesKind(row.profile) &&
+                    (query.isEmpty() ||
+                        "${row.profile.name} ${row.profile.method} ${row.profile.description} ${row.profile.badge}"
+                            .lowercase()
+                            .contains(query))
             }
             notifyDataSetChanged()
+        }
+
+        private fun matchesKind(profile: FlowsealProfile): Boolean = when (kindFilter) {
+            CatalogFilter.ALL -> true
+            CatalogFilter.YOUTUBE -> profile.kind == ProfileKind.YOUTUBE
+            CatalogFilter.DISCORD -> profile.kind == ProfileKind.DISCORD
+            CatalogFilter.OPERATOR -> profile.kind == ProfileKind.OPERATOR
+            CatalogFilter.OTHER -> profile.kind == ProfileKind.UNIVERSAL ||
+                profile.kind == ProfileKind.GENERAL ||
+                profile.kind == ProfileKind.CUSTOM
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -672,12 +825,16 @@ class ProfilePickerActivity : AppCompatActivity() {
             holder.bind(
                 row = row,
                 rank = row.result?.let {
-                    source.indexOfFirst { candidate -> candidate.profile.id == row.profile.id } + 1
+                    source.mapNotNull { candidate -> candidate.result }
+                        .sortedWith(profileResultComparator)
+                        .indexOfFirst { scored -> scored.profile.id == row.profile.id } + 1
                 },
                 testing = testing,
+                pinned = row.profile.id in pinnedIds,
                 expanded = row.profile.id in expandedIds,
                 onClick = onClick,
                 onTest = onTest,
+                onPin = onPin,
                 onEdit = onEdit,
                 onDelete = onDelete,
                 onToggle = {
@@ -697,9 +854,11 @@ class ProfilePickerActivity : AppCompatActivity() {
                 row: ProfileRow,
                 rank: Int?,
                 testing: Boolean,
+                pinned: Boolean,
                 expanded: Boolean,
                 onClick: (FlowsealProfile) -> Unit,
                 onTest: (FlowsealProfile) -> Unit,
+                onPin: (FlowsealProfile) -> Unit,
                 onEdit: (FlowsealProfile) -> Unit,
                 onDelete: (FlowsealProfile) -> Unit,
                 onToggle: () -> Unit,
@@ -711,6 +870,25 @@ class ProfilePickerActivity : AppCompatActivity() {
                 } else {
                     binding.root.context.getString(R.string.smart_rank, rank, profile.name)
                 }
+                if (profile.badge.isNotEmpty()) {
+                    binding.profileBadge.visibility = View.VISIBLE
+                    binding.profileBadge.text = profile.badge
+                } else {
+                    binding.profileBadge.visibility = View.GONE
+                }
+                val youtubeAccent = profile.kind == ProfileKind.YOUTUBE
+                val discordAccent = profile.kind == ProfileKind.DISCORD
+                binding.root.strokeColor = ContextCompat.getColor(
+                    binding.root.context,
+                    when {
+                        youtubeAccent -> R.color.youtube_red
+                        discordAccent -> R.color.discord_blurple
+                        else -> R.color.app_stroke
+                    },
+                )
+                binding.root.strokeWidth = if (youtubeAccent || discordAccent) 2 else 1
+                binding.profileMethod.visibility =
+                    if (result == null && !testing) View.GONE else View.VISIBLE
                 binding.profileMethod.text = if (result == null) {
                     if (testing) binding.root.context.getString(R.string.smart_waiting) else profile.method
                 } else {
@@ -734,6 +912,9 @@ class ProfilePickerActivity : AppCompatActivity() {
                 binding.youtubeScore.text = result?.let {
                     binding.root.context.getString(R.string.smart_youtube_score, it.youtubeScore)
                 }.orEmpty()
+                binding.youtubeScore.setTextColor(
+                    ContextCompat.getColor(binding.root.context, R.color.youtube_red)
+                )
                 binding.discordScore.text = result?.let {
                     binding.root.context.getString(R.string.smart_discord_score, it.discordScore)
                 }.orEmpty()
@@ -759,6 +940,16 @@ class ProfilePickerActivity : AppCompatActivity() {
                 binding.profileTestSingle.setOnClickListener {
                     if (!testing) onTest(profile)
                 }
+                binding.profilePin.imageTintList = android.content.res.ColorStateList.valueOf(
+                    ContextCompat.getColor(
+                        binding.root.context,
+                        if (pinned) R.color.lime_primary else R.color.app_text_muted,
+                    )
+                )
+                binding.profilePin.alpha = if (pinned) 1f else 0.55f
+                binding.profilePin.setOnClickListener {
+                    if (!testing) onPin(profile)
+                }
                 binding.customActions.visibility = if (profile.custom) View.VISIBLE else View.GONE
                 binding.profileEdit.setOnClickListener { if (!testing) onEdit(profile) }
                 binding.profileDelete.setOnClickListener { if (!testing) onDelete(profile) }
@@ -768,10 +959,6 @@ class ProfilePickerActivity : AppCompatActivity() {
                 binding.root.isEnabled = !testing
                 binding.root.alpha = if (testing && result == null) 0.65f else 1f
                 binding.root.setOnClickListener { if (!testing) onClick(profile) }
-                if (bindingAdapterPosition != RecyclerView.NO_POSITION) {
-                    binding.root.translationY = 18f
-                    binding.root.animate().translationY(0f).setDuration(240).start()
-                }
             }
 
             private fun flag(value: Boolean?): String = if (value == true) "OK" else "ERR"
@@ -806,16 +993,9 @@ class ProfilePickerActivity : AppCompatActivity() {
                 }
             }.trimEnd()
         }
-
-        companion object {
-            private val resultComparator =
-                compareByDescending<ProfileRow> { it.result != null }
-                    .thenByDescending { it.result?.balancedScore ?: -1 }
-                    .thenByDescending { it.result?.combinedScore ?: -1 }
-                    .thenByDescending { it.result?.pingSuccess ?: -1 }
-                    .thenBy { it.result?.averagePingMs ?: Double.MAX_VALUE }
-        }
     }
+
+    private enum class CatalogFilter { ALL, YOUTUBE, DISCORD, OPERATOR, OTHER }
 
     companion object {
         private const val TAG = "ProfilePicker"
@@ -826,7 +1006,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         private const val PROXY_STOP_TIMEOUT_MS = 2_000L
         private const val BETWEEN_STRATEGIES_DELAY_MS = 150L
         private const val MAX_PARALLEL_REQUESTS = 8
-        private const val SAVED_RESULTS_KEY = "strategy_test_results_v3"
+        private const val SAVED_RESULTS_KEY = StrategyMemory.RESULTS_KEY
         private const val TOPS_EXPANDED_KEY = "strategy_tops_expanded"
         private const val RESULT_FORMAT_VERSION = 3
         private val PING_TIME = Regex("""time[=<]([\d.]+)\s*ms""")
@@ -876,6 +1056,11 @@ class ProfilePickerActivity : AppCompatActivity() {
                 "YouTubeJnnApi",
                 "jnn-pa.googleapis.com",
                 ServiceCategory.YOUTUBE,
+            ),
+            TestTarget(
+                "DiscordVoiceHost",
+                "discord.gg",
+                ServiceCategory.DISCORD,
             ),
             TestTarget(
                 "DiscordAPI",
@@ -932,8 +1117,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         private val PROTOCOL_TEST_COUNT = TARGETS.count { !it.pingOnly } * 3
         private val PING_TEST_COUNT = TARGETS.size
         private val profileResultComparator =
-            compareByDescending<ProfileTestResult> { it.balancedScore }
-                .thenByDescending { it.combinedScore }
+            compareByDescending<ProfileTestResult> { it.protocolSuccess }
                 .thenByDescending { it.pingSuccess }
                 .thenBy { it.averagePingMs ?: Double.MAX_VALUE }
     }

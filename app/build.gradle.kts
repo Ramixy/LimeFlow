@@ -6,13 +6,14 @@ plugins {
 android {
     namespace = "io.github.dovecoteescapee.byedpi"
     compileSdk = 34
+    ndkVersion = "25.1.8937393"
 
     defaultConfig {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 19
-        versionName = "1.1.6"
+        versionCode = 23
+        versionName = "1.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

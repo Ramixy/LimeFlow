@@ -10,6 +10,7 @@ import io.github.dovecoteescapee.byedpi.BuildConfig
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.data.Mode
 import io.github.dovecoteescapee.byedpi.activities.AppFilterActivity
+import io.github.dovecoteescapee.byedpi.activities.HostListActivity
 import io.github.dovecoteescapee.byedpi.utility.*
 
 class MainSettingsFragment : PreferenceFragmentCompat() {
@@ -71,6 +72,10 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
         findPreferenceNotNull<Preference>("version").summary = BuildConfig.VERSION_NAME
         findPreferenceNotNull<Preference>("vpn_app_filter").setOnPreferenceClickListener {
             startActivity(Intent(requireContext(), AppFilterActivity::class.java))
+            true
+        }
+        findPreferenceNotNull<Preference>("bypass_host_list").setOnPreferenceClickListener {
+            startActivity(Intent(requireContext(), HostListActivity::class.java))
             true
         }
 

@@ -119,6 +119,8 @@ static const char help_text[] = {
     "    -r, --tlsrec <pos_t>      Make TLS record at position\n"
     "    -m, --tlsminor <ver>      Change minor version of TLS\n"
     "    -a, --udp-fake <count>    UDP fakes count, default 0\n"
+    "    -J, --udp-junk <count>    Random UDP junk packets before the real datagram, 0-64\n"
+    "    -G, --udp-junk-size <a-b> Junk datagram size range in bytes, 16-1024\n"
     #ifdef __linux__
     "    -Y, --drop-sack           Drop packets with SACK extension\n"
     #endif
@@ -180,6 +182,8 @@ const struct option options[] = {
     {"tlsrec",        1, 0, 'r'},
     {"tlsminor",      1, 0, 'm'},
     {"udp-fake",      1, 0, 'a'},
+    {"udp-junk",      1, 0, 'J'},
+    {"udp-junk-size", 1, 0, 'G'},
     {"def-ttl",       1, 0, 'g'},
     {"wait-send",     0, 0, 'Z'}, //
     {"await-int",     1, 0, 'W'}, //
@@ -1179,6 +1183,38 @@ int parse_args(int argc, char **argv)
                 invalid = 1;
             else
                 dp->udp_fake_count = val;
+            break;
+
+        case 'J':
+            val = strtol(optarg, &end, 0);
+            if (val < 0 || val > 64 || *end)
+                invalid = 1;
+            else {
+                dp->udp_junk_count = (int)val;
+                if (!dp->udp_junk_min)
+                    dp->udp_junk_min = 64;
+                if (!dp->udp_junk_max)
+                    dp->udp_junk_max = 256;
+            }
+            break;
+
+        case 'G':
+            val = strtol(optarg, &end, 0);
+            if (val < 16 || val > 1024)
+                invalid = 1;
+            else {
+                dp->udp_junk_min = (int)val;
+                dp->udp_junk_max = (int)val;
+                if (*end == '-') {
+                    val = strtol(end + 1, &end, 0);
+                    if (val < dp->udp_junk_min || val > 1024)
+                        invalid = 1;
+                    else
+                        dp->udp_junk_max = (int)val;
+                }
+                if (*end)
+                    invalid = 1;
+            }
             break;
             
         case 'V':
