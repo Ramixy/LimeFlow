@@ -72,6 +72,8 @@ object FlowsealProfiles {
      * QUIC on 443 plus Discord voice ranges. `-J`/`-G` are the junk train (Jc / Jmin-Jmax).
      * Voice stays 50000-50100: a 50000-65535 sweep stalled unrelated UDP and broke tests.
      * UDP groups stay port-scoped: the SOCKS UDP hook does not read TLS SNI.
+     * quicFakePayload/voiceFake override the decoys: without them the engine repeats
+     * the client datagram (voice) or uses the built-in fake.
      */
     private fun udpGroups(
         quicFakes: Int,
@@ -80,18 +82,21 @@ object FlowsealProfiles {
         junkMin: Int = 64,
         junkMax: Int = 320,
         hosts: HostSelection = BypassHosts.defaultSelection,
+        quicFakePayload: String = quicFake,
+        voiceFake: String = "",
     ): String {
         val quicOn = hosts.hasYoutube || hosts.hasExtra || hosts.hasDiscord
         val quicJunk = if (quicOn) junkCount else 0
         val quicCount = if (quicOn) quicFakes else 0
+        val voiceFakeFlag = if (voiceFake.isBlank()) "" else "-l':$voiceFake' "
         val voice = if (hosts.hasDiscord) {
-            "-Ku -V19294-19344 -a$voiceFakes -An " +
-                "-Ku -V50000-50100 -a$voiceFakes -An "
+            "-Ku -V19294-19344 ${voiceFakeFlag}-a$voiceFakes -An " +
+                "-Ku -V50000-50100 ${voiceFakeFlag}-a$voiceFakes -An "
         } else {
             "-Ku -V19294-19344 -a0 -An " +
                 "-Ku -V50000-50100 -a0 -An "
         }
-        return "-Ku -V443 -R1-8 -J$quicJunk -G$junkMin-$junkMax $quicFake -a$quicCount -An " +
+        return "-Ku -V443 -R1-8 -J$quicJunk -G$junkMin-$junkMax $quicFakePayload -a$quicCount -An " +
             voice
     }
 
@@ -121,7 +126,9 @@ object FlowsealProfiles {
         junkMin: Int = 64,
         junkMax: Int = 320,
         hosts: HostSelection = BypassHosts.defaultSelection,
-    ) = "$globals ${udpGroups(quicFakes, voiceFakes, junkCount, junkMin, junkMax, hosts)}" +
+        quicFakePayload: String = quicFake,
+        voiceFake: String = "",
+    ) = "$globals ${udpGroups(quicFakes, voiceFakes, junkCount, junkMin, junkMax, hosts, quicFakePayload, voiceFake)}" +
         scoped(youtube, discord, generic, retry, hosts)
 
     /*
@@ -243,6 +250,250 @@ object FlowsealProfiles {
             ),
             kind = ProfileKind.UNIVERSAL,
             badge = "Junk",
+        ),
+        /*
+         * Порты стратегий zapret-discord-youtube 1.10.0 (winws) на движок byedpi.
+         * Один в один они не переносятся (seqovl-pattern, badseq/ts-fooling и
+         * repeats в byedpi отсутствуют), поэтому взяты эквиваленты: fake стадия,
+         * multisplit/multidisorder цепочки, fake-копия ClientHello с подменой
+         * хоста (-Qo -n<домен>, аналог hostfakesplit) и короткий fake (-Qm=100,
+         * аналог stun.bin). Хосты берутся из тех же конфигов: ya.ru, ozon.ru,
+         * www.google.com.
+         */
+        FlowsealProfile(
+            "limeflow_z_alt",
+            "ZAPRET ALT",
+            "fake + fakedsplit",
+            "Порт general (ALT) 1.10.0: fake с рандомизацией и подменой SNI на google, разрез и disorder, как в fakedsplit",
+            profileArgs(
+                youtube = "-Qr -nwww.google.com -f-1 -t5 -s1+s -d1+s -r1+s",
+                discord = "-Qr -nvk.com -nwww.google.com -f-204 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr -nwww.google.com -f-1 -t5 -s1+s -d1+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "zapret",
+        ),
+        FlowsealProfile(
+            "limeflow_z_alt2",
+            "ZAPRET ALT2",
+            "split-pos 2 + sni",
+            "Порт general (ALT2): разрез на 2-м байте плюс на границе SNI, multisplit поверх fake",
+            profileArgs(
+                youtube = "-Qr -nwww.google.com -f-1 -t5 -s2 -s1+s -d3+s",
+                discord = "-Qr -nvk.com -nwww.google.com -f-204 -s2 -s1:5+sm -d1",
+                generic = "-Qr -nwww.google.com -f-1 -t5 -s2 -s1+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.YOUTUBE,
+            badge = "ALT2",
+        ),
+        FlowsealProfile(
+            "limeflow_z_alt3",
+            "ZAPRET ALT3 YA",
+            "hostfakesplit ya.ru",
+            "Порт general (ALT3): fake-копия настоящего ClientHello с хостом ya.ru вместо реального",
+            profileArgs(
+                youtube = "-Qo -nya.ru -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qo -nya.ru -f-204 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qo -nya.ru -f-1 -t5 -s1+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "ya.ru",
+        ),
+        FlowsealProfile(
+            "limeflow_z_alt4",
+            "ZAPRET MULTISPLIT",
+            "fake + multisplit",
+            "Порт general (ALT4): fake с частым разрезом по всей длине ClientHello",
+            profileArgs(
+                youtube = "-Qr -nwww.google.com -f-1 -t5 -s1+s -s3+s -s6+s -d9+s -s12+s -r1+s",
+                discord = "-Qr -nvk.com -nwww.google.com -f-204 -s1:5+sm -o2 -d1",
+                generic = "-Qr -nwww.google.com -f-1 -t5 -s1+s -s3+s -s6+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.YOUTUBE,
+            badge = "Мульти",
+        ),
+        FlowsealProfile(
+            "limeflow_z_alt7",
+            "ZAPRET SNIEXT",
+            "split 2 + sniext",
+            "Порт general (ALT7): разрез на 2-м байте, на границе SNI и посреди хоста",
+            profileArgs(
+                youtube = "-Qr -nwww.google.com -f-1 -t5 -s2 -s1+s -d1+m -r1+s",
+                discord = "-Qr -nvk.com -nwww.google.com -f-204 -s2 -s1:5+sm -d1",
+                generic = "-Qr -nwww.google.com -f-1 -t5 -s2 -s1+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.YOUTUBE,
+            badge = "SNIext",
+        ),
+        FlowsealProfile(
+            "limeflow_z_alt9",
+            "ZAPRET OZON",
+            "hostfakesplit ozon.ru",
+            "Порт general (ALT9): fake-копия ClientHello с хостом ozon.ru, как в hostfakesplit",
+            profileArgs(
+                youtube = "-Qo -nozon.ru -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qo -nozon.ru -f-204 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qo -nozon.ru -f-1 -t5 -s1+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "Ozon",
+        ),
+        FlowsealProfile(
+            "limeflow_z_auto",
+            "ZAPRET AUTO 1.10",
+            "fake + multidisorder",
+            "Порт general (FAKE TLS AUTO) 1.10.0: multidisorder с разрезами на 1-м байте и посреди SLD",
+            profileArgs(
+                youtube = "-Qr -nwww.google.com -f-1 -t5 -d1+s -d1+m -d3+s -d9+s -r1+s",
+                discord = "-Qr -nvk.com -nwww.google.com -f-204 -d1+m -s1:5+sm -o2 -d1",
+                generic = "-Qr -nwww.google.com -f-1 -t5 -d1+s -d1+m",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.YOUTUBE,
+            badge = "Auto",
+        ),
+        FlowsealProfile(
+            "limeflow_z_short",
+            "ZAPRET SHORTFAKE",
+            "short fake (stun)",
+            "Порт ALT10/SIMPLE FAKE ALT2: короткий fake на 100 байт вместо полного ClientHello, как stun.bin",
+            profileArgs(
+                youtube = "-Qr,m=100 -nwww.google.com -f-1 -t5 -s1+s -d3+s",
+                discord = "-Qr,m=100 -nvk.com -nwww.google.com -f-204 -s1:5+sm -d1",
+                generic = "-Qr,m=100 -nwww.google.com -f-1 -t5 -s1+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 6,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.GENERAL,
+            badge = "Короткий",
+        ),
+        /*
+         * ZF-серия: fake-пакеты — дословные бинари zapret-discord-youtube 1.10.0
+         * (FakePayloads), голосовые группы получают ACTIVE_DISCORD_UDP вместо
+         * повтора клиентской датаграммы. AUTOTTTL подбирает TTL fake сам.
+         */
+        FlowsealProfile(
+            "limeflow_zf_google",
+            "ZAPRET GFAKE",
+            "google CH fake 681b",
+            "Полный Chrome-ClientHello из zapret на TCP, настоящий QUIC Initial на 443 и Discord-fake на голосе",
+            profileArgs(
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1+s -d3+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "GFake",
+        ),
+        FlowsealProfile(
+            "limeflow_zf_maxru",
+            "ZAPRET MFAKE",
+            "max.ru CH fake 664b",
+            "ClientHello с SNI max.ru из zapret на TCP, QUIC Initial на 443, Discord-fake на голосе",
+            profileArgs(
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -t5 -s1+s -d3+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "MFake",
+        ),
+        FlowsealProfile(
+            "limeflow_zf_4pda",
+            "ZAPRET 4PFAKE",
+            "4pda CH fake 284b",
+            "Компактный ClientHello (284 байта) из zapret — быстрый fake для слабых сетей и устройств",
+            profileArgs(
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -t5 -s1+s -d3+s",
+                retry = retryDeep,
+                quicFakes = 8,
+                voiceFakes = 6,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "4PFake",
+        ),
+        FlowsealProfile(
+            "limeflow_zf_voice",
+            "ZAPRET VOICE",
+            "voice-first + fakes",
+            "Голос Discord в приоритете: 12 fake с Discord-подменой на голосовых портах, google-fake на gateway",
+            profileArgs(
+                youtube = ytWifi,
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = genericOob,
+                retry = retryDeep,
+                quicFakes = 8,
+                voiceFakes = 12,
+                hosts = hosts,
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.DISCORD,
+            badge = "Голос",
+        ),
+        FlowsealProfile(
+            "limeflow_zf_autottl",
+            "ZAPRET AUTOTTTL",
+            "google fake + auto TTL",
+            "Google-fake с авто-TTL: движок сам замеряет дистанцию до сервера UDP-пробой, -t8 только как запасной",
+            profileArgs(
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -z1:4:64 -t8 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -z1:4:64 -t8 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -z1:4:64 -t8 -s1+s -d3+s",
+                retry = "-o1 -d1 -s3+sm -r1+s -Qr -f-1 -z1:4:64 -t6",
+                quicFakes = 10,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "AutoTTL",
         ),
         FlowsealProfile(
             "limeflow_discord",

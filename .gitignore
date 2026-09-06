@@ -25,3 +25,5 @@ keystore.properties
 signing.properties
 outputs/
 local-secrets.properties
+gradle-build.log
+tgwsproxy/build/

@@ -1,6 +1,7 @@
 package io.github.dovecoteescapee.byedpi.core
 
 import android.content.SharedPreferences
+import io.github.dovecoteescapee.byedpi.data.ClassicEngine
 import io.github.dovecoteescapee.byedpi.utility.getStringNotNull
 import io.github.dovecoteescapee.byedpi.utility.shellSplit
 
@@ -8,7 +9,15 @@ sealed interface ByeDpiProxyPreferences {
     companion object {
         fun fromSharedPreferences(preferences: SharedPreferences): ByeDpiProxyPreferences =
             when (preferences.getBoolean("byedpi_enable_cmd_settings", false)) {
-                true -> ByeDpiProxyCmdPreferences(preferences)
+                true -> {
+                    val cmd = ByeDpiProxyCmdPreferences(preferences)
+                    if (ClassicEngine.isEnabled(preferences)) {
+                        ByeDpiProxyCmdPreferences(ClassicEngine.applyToArgs(cmd.args))
+                    } else {
+                        cmd
+                    }
+                }
+
                 false -> ByeDpiProxyUIPreferences(preferences)
             }
     }

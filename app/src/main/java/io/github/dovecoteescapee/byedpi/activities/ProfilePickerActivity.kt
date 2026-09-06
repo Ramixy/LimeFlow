@@ -5,11 +5,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.os.Build
 import android.text.Editable
 import android.text.TextWatcher
+import androidx.transition.TransitionManager
 import android.util.Log
 import android.view.LayoutInflater
+
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -18,53 +19,32 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.transition.TransitionManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.dovecoteescapee.byedpi.R
-import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
-import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyCmdPreferences
+import io.github.dovecoteescapee.byedpi.core.ProfileTestResult
+import io.github.dovecoteescapee.byedpi.core.ServiceCategory
+import io.github.dovecoteescapee.byedpi.core.StrategyTestRunner
+import io.github.dovecoteescapee.byedpi.core.profileResultComparator
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfiles
 import io.github.dovecoteescapee.byedpi.data.ProfileKind
 import io.github.dovecoteescapee.byedpi.data.StrategyMemory
 import io.github.dovecoteescapee.byedpi.databinding.ActivityProfilePickerBinding
 import io.github.dovecoteescapee.byedpi.databinding.ItemProfileBinding
-import io.github.dovecoteescapee.byedpi.utility.getPreferences
 import io.github.dovecoteescapee.byedpi.utility.applyLimeFlowPalette
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.delay
+import io.github.dovecoteescapee.byedpi.utility.getPreferences
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.net.InetSocketAddress
-import java.net.Proxy
-import java.net.Socket
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLSocket
-import org.json.JSONArray
-import org.json.JSONObject
 
 class ProfilePickerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityProfilePickerBinding
     private lateinit var adapter: ProfileAdapter
-    private var testJob: Job? = null
     private var topsExpanded = false
     private var pendingBest: FlowsealProfile? = null
+    private var wasTesting = false
+    private var lastRenderedResult: ProfileTestResult? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         applyLimeFlowPalette()
@@ -76,12 +56,12 @@ class ProfilePickerActivity : AppCompatActivity() {
             profiles = FlowsealProfiles.catalog(getPreferences()),
             pinnedIds = StrategyMemory.pinned(getPreferences()),
             onClick = select@ { profile ->
-                if (testJob?.isActive == true) return@select
+                if (StrategyTestRunner.isRunning) return@select
                 applyProfile(profile)
             },
             onTest = test@ { profile ->
-                if (testJob?.isActive == true) return@test
-                runStrategyTest(listOf(profile))
+                if (StrategyTestRunner.isRunning) return@test
+                startTest(listOf(profile), clearResults = false)
             },
             onPin = { profile ->
                 StrategyMemory.togglePin(getPreferences(), profile.id)
@@ -93,7 +73,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         binding.profileList.layoutManager = LinearLayoutManager(this)
         binding.profileList.adapter = adapter
         binding.youtubeFeaturedCard.setOnClickListener {
-            if (testJob?.isActive == true) return@setOnClickListener
+            if (StrategyTestRunner.isRunning) return@setOnClickListener
             val youtube = FlowsealProfiles.catalog(getPreferences())
                 .firstOrNull { it.id == "limeflow_youtube" } ?: return@setOnClickListener
             applyProfile(youtube)
@@ -125,10 +105,10 @@ class ProfilePickerActivity : AppCompatActivity() {
             pendingBest?.let { applyProfile(it) }
         }
         binding.smartTestButton.setOnClickListener {
-            if (testJob?.isActive == true) {
-                testJob?.cancel()
+            if (StrategyTestRunner.isRunning) {
+                StrategyTestRunner.stop()
             } else {
-                runStrategyTest(FlowsealProfiles.catalog(getPreferences()))
+                startTest(FlowsealProfiles.catalog(getPreferences()), clearResults = true)
             }
         }
         binding.addStrategyButton.setOnClickListener {
@@ -141,6 +121,9 @@ class ProfilePickerActivity : AppCompatActivity() {
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
+        lifecycleScope.launch {
+            StrategyTestRunner.state.collect { state -> render(state) }
+        }
         binding.root.alpha = 0f
         binding.root.translationY = 24f
         binding.root.animate()
@@ -155,6 +138,84 @@ class ProfilePickerActivity : AppCompatActivity() {
         if (::adapter.isInitialized) {
             adapter.replaceProfiles(FlowsealProfiles.catalog(getPreferences()))
             adapter.setPinned(StrategyMemory.pinned(getPreferences()))
+        }
+    }
+
+    private fun startTest(profiles: List<FlowsealProfile>, clearResults: Boolean) {
+        when (StrategyTestRunner.start(applicationContext, profiles, clearResults)) {
+            StrategyTestRunner.StartResult.Started -> {
+                wasTesting = false
+                lastRenderedResult = null
+                adapter.beginTesting(clearResults)
+            }
+
+            StrategyTestRunner.StartResult.AlreadyRunning -> Unit
+
+            StrategyTestRunner.StartResult.ServiceRunning ->
+                Toast.makeText(this, R.string.smart_service_running, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun render(state: StrategyTestRunner.State) {
+        when (state) {
+            is StrategyTestRunner.State.Testing -> {
+                if (!wasTesting) {
+                    wasTesting = true
+                    lastRenderedResult = null
+                    binding.testConsoleCard.visibility = View.VISIBLE
+                    binding.applyBestCard.visibility = View.GONE
+                    binding.searchInput.isEnabled = false
+                    adapter.setTesting(true)
+                }
+                binding.smartProgress.visibility = View.VISIBLE
+                binding.smartProgress.max = state.total
+                binding.smartProgress.progress = state.done
+                binding.smartTestTitle.setText(R.string.smart_test_stop)
+                binding.smartTestStatus.text = getString(
+                    R.string.smart_testing,
+                    state.currentName,
+                    state.done + 1,
+                    state.total,
+                )
+                binding.testConsole.text = state.console
+                val last = state.lastResult
+                if (last != null && last != lastRenderedResult) {
+                    lastRenderedResult = last
+                    adapter.updateResult(last)
+                }
+            }
+
+            is StrategyTestRunner.State.Finished ->
+                finishTesting(finished = true) { getString(R.string.smart_results, state.rankedCount) }
+
+            is StrategyTestRunner.State.Cancelled ->
+                finishTesting { getString(R.string.smart_cancelled) }
+
+            is StrategyTestRunner.State.Failed -> {
+                Log.e(TAG, "Strategy test failed")
+                finishTesting { getString(R.string.smart_failed) }
+            }
+
+            is StrategyTestRunner.State.Idle -> {
+                wasTesting = false
+                binding.smartProgress.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun finishTesting(finished: Boolean = false, status: () -> CharSequence) {
+        wasTesting = false
+        lastRenderedResult = null
+        binding.smartProgress.visibility = View.GONE
+        binding.smartTestTitle.setText(R.string.smart_test)
+        binding.searchInput.isEnabled = true
+        val saved = StrategyTestRunner.loadSavedResults(this).sortedWith(profileResultComparator)
+        adapter.showRanked(saved)
+        updateTopResults(saved)
+        binding.smartTestStatus.text = status()
+        if (finished) {
+            showApplyBest(saved)
+            showFinalConsole(saved)
         }
     }
 
@@ -173,12 +234,9 @@ class ProfilePickerActivity : AppCompatActivity() {
     }
 
     private fun showApplyBest(ranked: List<ProfileTestResult>) {
-        val best = ranked.maxWithOrNull(profileResultComparator) ?: run {
-            binding.applyBestCard.visibility = View.GONE
-            pendingBest = null
-            return
-        }
-        if (best.protocolSuccess <= 0) {
+        // The list is sorted best-first; the first profile that passed at least one
+        // protocol check is the best one.
+        val best = ranked.firstOrNull { it.protocolSuccess > 0 } ?: run {
             binding.applyBestCard.visibility = View.GONE
             pendingBest = null
             return
@@ -189,7 +247,7 @@ class ProfilePickerActivity : AppCompatActivity() {
             R.string.apply_best_summary,
             best.profile.name,
             best.protocolSuccess,
-            PROTOCOL_TEST_COUNT,
+            StrategyTestRunner.PROTOCOL_TEST_COUNT,
         )
     }
 
@@ -252,226 +310,14 @@ class ProfilePickerActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun runStrategyTest(profiles: List<FlowsealProfile>) {
-        binding.testConsoleCard.visibility = View.VISIBLE
-        binding.smartProgress.visibility = View.VISIBLE
-        binding.smartProgress.max = profiles.size
-        binding.smartProgress.progress = 0
-        binding.smartTestStatus.setText(R.string.smart_stop_hint)
-        binding.searchInput.isEnabled = false
-        binding.applyBestCard.visibility = View.GONE
-        adapter.beginTesting(clearResults = profiles.size > 1)
-
-        testJob = lifecycleScope.launch {
-            val savedByProfile = loadSavedResults()
-                .associateByTo(mutableMapOf()) { it.profile.id }
-            try {
-                profiles.forEachIndexed { index, profile ->
-                    binding.smartProgress.progress = index
-                    binding.smartTestStatus.text = getString(
-                        R.string.smart_testing,
-                        profile.name,
-                        index + 1,
-                        profiles.size,
-                    )
-                    showConsoleHeader(profile, index, profiles.size)
-                    val result = testProfile(profile) { targetResult ->
-                        appendConsole(targetResult)
-                    }
-                    savedByProfile[profile.id] = result
-                    adapter.updateResult(result)
-                    persistResults(
-                        savedByProfile.values.sortedWith(profileResultComparator)
-                    )
-                    updateTopResults(savedByProfile.values.toList())
-                }
-
-                val ranked = savedByProfile.values.sortedWith(profileResultComparator)
-                adapter.showRanked(ranked)
-                persistResults(ranked)
-                updateTopResults(ranked)
-                showApplyBest(ranked)
-                binding.smartProgress.progress = profiles.size
-                binding.smartTestStatus.text = getString(
-                    R.string.smart_results,
-                    ranked.size,
-                )
-                showFinalConsole(ranked)
-            } catch (error: CancellationException) {
-                binding.smartTestStatus.setText(R.string.smart_cancelled)
-                throw error
-            } catch (error: Throwable) {
-                Log.e(TAG, "Full strategy test failed", error)
-                binding.smartTestStatus.setText(R.string.smart_failed)
-            } finally {
-                binding.smartProgress.visibility = View.GONE
-                binding.searchInput.isEnabled = true
-                val savedResults = loadSavedResults().sortedWith(profileResultComparator)
-                adapter.showRanked(savedResults)
-                updateTopResults(savedResults)
-                testJob = null
-            }
-        }
-    }
-
     private fun restoreSavedResults() {
-        val saved = loadSavedResults()
+        val saved = StrategyTestRunner.loadSavedResults(this)
         if (saved.isEmpty()) return
         val ranked = saved.sortedWith(profileResultComparator)
         adapter.showRanked(ranked)
         updateTopResults(ranked)
         showApplyBest(ranked)
         binding.smartTestStatus.text = getString(R.string.smart_saved_results, ranked.size)
-    }
-
-    private fun persistResults(results: List<ProfileTestResult>) {
-        val payload = JSONObject().apply {
-            put("version", RESULT_FORMAT_VERSION)
-            put("savedAt", System.currentTimeMillis())
-            put("protocolTotal", PROTOCOL_TEST_COUNT)
-            put("pingTotal", PING_TEST_COUNT)
-            put("results", JSONArray().apply {
-                results.forEach { result ->
-                    put(JSONObject().apply {
-                        put("profileId", result.profile.id)
-                        put("protocolSuccess", result.protocolSuccess)
-                        put("protocolTotal", PROTOCOL_TEST_COUNT)
-                        put("pingSuccess", result.pingSuccess)
-                        put("pingTotal", PING_TEST_COUNT)
-                        put("averagePingMs", result.averagePingMs ?: JSONObject.NULL)
-                        put("targets", JSONArray().apply {
-                            result.targetResults.forEach { target ->
-                                put(JSONObject().apply {
-                                    put("name", target.target.name)
-                                    put("http", target.httpOk ?: JSONObject.NULL)
-                                    put("tls12", target.tls12Ok ?: JSONObject.NULL)
-                                    put("tls13", target.tls13Ok ?: JSONObject.NULL)
-                                    put("ping", target.pingMs ?: JSONObject.NULL)
-                                })
-                            }
-                        })
-                    })
-                }
-            })
-        }
-        getPreferences().edit().putString(SAVED_RESULTS_KEY, payload.toString()).apply()
-    }
-
-    private fun loadSavedResults(): List<ProfileTestResult> = runCatching {
-        val raw = getPreferences().getString(SAVED_RESULTS_KEY, null)
-            ?: return@runCatching emptyList()
-        val payload = JSONObject(raw)
-        if (payload.optInt("version") != RESULT_FORMAT_VERSION) {
-            return@runCatching emptyList()
-        }
-        val profiles = FlowsealProfiles.catalog(getPreferences()).associateBy { it.id }
-        val targets = TARGETS.associateBy { it.name }
-        val stored = payload.getJSONArray("results")
-        buildList {
-            for (index in 0 until stored.length()) {
-                val item = stored.getJSONObject(index)
-                val profile = profiles[item.optString("profileId")] ?: continue
-                val targetItems = item.optJSONArray("targets") ?: JSONArray()
-                val targetResults = buildList {
-                    for (targetIndex in 0 until targetItems.length()) {
-                        val targetItem = targetItems.getJSONObject(targetIndex)
-                        val target = targets[targetItem.optString("name")] ?: continue
-                        add(
-                            TargetResult(
-                                target = target,
-                                httpOk = targetItem.nullableBoolean("http"),
-                                tls12Ok = targetItem.nullableBoolean("tls12"),
-                                tls13Ok = targetItem.nullableBoolean("tls13"),
-                                pingMs = targetItem.nullableDouble("ping"),
-                            )
-                        )
-                    }
-                }
-                if (targetResults.size != TARGETS.size) continue
-                add(
-                    ProfileTestResult(
-                        profile = profile,
-                        protocolSuccess = item.optInt("protocolSuccess"),
-                        pingSuccess = item.optInt("pingSuccess"),
-                        averagePingMs = item.nullableDouble("averagePingMs"),
-                        targetResults = targetResults,
-                    )
-                )
-            }
-        }
-    }.getOrElse {
-        Log.w(TAG, "Saved strategy results are invalid", it)
-        emptyList()
-    }
-
-    private fun JSONObject.nullableBoolean(key: String): Boolean? =
-        if (has(key) && !isNull(key)) getBoolean(key) else null
-
-    private fun JSONObject.nullableDouble(key: String): Double? =
-        if (has(key) && !isNull(key)) getDouble(key) else null
-
-    private fun showConsoleHeader(profile: FlowsealProfile, index: Int, total: Int) {
-        binding.testConsole.text = buildString {
-            append('[').append(index + 1).append('/').append(total).append("] ")
-            append(profile.name).append('\n')
-            append(getString(R.string.smart_starting)).append('\n')
-        }
-    }
-
-    private fun appendConsole(result: TargetResult) {
-        val serviceMark = when (result.target.category) {
-            ServiceCategory.YOUTUBE -> "▶"
-            ServiceCategory.DISCORD -> "●"
-            ServiceCategory.NETWORK -> "◇"
-        }
-        val line = if (result.pingOnly) {
-            String.format(
-                Locale.US,
-                "%s %-20s Ping: %s",
-                serviceMark,
-                result.target.name,
-                formatPing(result.pingMs),
-            )
-        } else {
-            String.format(
-                Locale.US,
-                "%s %-20s HTTP:%-5s TLS1.2:%-5s TLS1.3:%-5s | %s",
-                serviceMark,
-                result.target.name,
-                okLabel(result.httpOk),
-                okLabel(result.tls12Ok),
-                okLabel(result.tls13Ok),
-                formatPing(result.pingMs),
-            )
-        }
-        binding.testConsole.append("$line\n")
-    }
-
-    private fun showFinalConsole(results: List<ProfileTestResult>) {
-        binding.testConsole.text = buildString {
-            append(getString(R.string.smart_best_title)).append('\n')
-            append('\n').append(getString(R.string.smart_top_youtube)).append('\n')
-            serviceRanking(results) { it.youtubeScore }.take(5).forEachIndexed { index, result ->
-                append(index + 1)
-                    .append(". ")
-                    .append(result.profile.name)
-                    .append(' ')
-                    .append(result.youtubeScore)
-                    .append("%")
-                    .append('\n')
-            }
-            append('\n').append(getString(R.string.smart_top_discord)).append('\n')
-            serviceRanking(results) { it.discordScore }.take(5).forEachIndexed { index, result ->
-                append(index + 1)
-                    .append(". ")
-                    .append(result.profile.name)
-                    .append(' ')
-                    .append(result.discordScore)
-                    .append("%")
-                    .append('\n')
-            }
-            append('\n').append(getString(R.string.smart_choose_result))
-        }
     }
 
     private fun updateTopResults(results: List<ProfileTestResult>) {
@@ -515,211 +361,35 @@ class ProfilePickerActivity : AppCompatActivity() {
             .thenBy { it.averagePingMs ?: Double.MAX_VALUE }
     )
 
-    private suspend fun testProfile(
-        profile: FlowsealProfile,
-        onTargetComplete: (TargetResult) -> Unit,
-    ): ProfileTestResult = supervisorScope {
-        val engine = ByeDpiProxy()
-        val engineExited = AtomicBoolean(false)
-        val engineJob = launch(Dispatchers.IO) {
-            try {
-                engine.startProxy(ByeDpiProxyCmdPreferences(profile.arguments))
-            } catch (error: Throwable) {
-                if (error is CancellationException) throw error
-                Log.e(TAG, "Strategy ${profile.name} failed to start", error)
-            } finally {
-                engineExited.set(true)
+    private fun showFinalConsole(results: List<ProfileTestResult>) {
+        binding.testConsole.text = buildString {
+            append(getString(R.string.smart_best_title)).append('\n')
+            append('\n').append(getString(R.string.smart_top_youtube)).append('\n')
+            serviceRanking(results) { it.youtubeScore }.take(5).forEachIndexed { index, result ->
+                append(index + 1)
+                    .append(". ")
+                    .append(result.profile.name)
+                    .append(' ')
+                    .append(result.youtubeScore)
+                    .append("%")
+                    .append('\n')
             }
-        }
-
-        try {
-            delay(PROXY_START_DELAY_MS)
-            if (engineExited.get()) {
-                return@supervisorScope ProfileTestResult(profile, 0, 0, null, emptyList())
+            append('\n').append(getString(R.string.smart_top_discord)).append('\n')
+            serviceRanking(results) { it.discordScore }.take(5).forEachIndexed { index, result ->
+                append(index + 1)
+                    .append(". ")
+                    .append(result.profile.name)
+                    .append(' ')
+                    .append(result.discordScore)
+                    .append("%")
+                    .append('\n')
             }
-
-            val requestSlots = Semaphore(MAX_PARALLEL_REQUESTS)
-            val checks = TARGETS.map { target ->
-                async(Dispatchers.IO) {
-                    checkTarget(target, requestSlots)
-                }
-            }
-
-            var protocolSuccess = 0
-            var pingSuccess = 0
-            val pings = mutableListOf<Double>()
-            val targetResults = mutableListOf<TargetResult>()
-            checks.forEach { check ->
-                val result = check.await()
-                targetResults += result
-                protocolSuccess += result.protocolSuccess
-                if (result.pingMs != null) {
-                    pingSuccess++
-                    pings += result.pingMs
-                }
-                withContext(Dispatchers.Main) { onTargetComplete(result) }
-            }
-
-            ProfileTestResult(
-                profile = profile,
-                protocolSuccess = protocolSuccess,
-                pingSuccess = pingSuccess,
-                averagePingMs = pings.takeIf { it.isNotEmpty() }?.average(),
-                targetResults = targetResults,
-            )
-        } finally {
-            withContext(NonCancellable + Dispatchers.IO) {
-                runCatching { engine.stopProxy() }
-                if (withTimeoutOrNull(PROXY_STOP_TIMEOUT_MS) { engineJob.join() } == null) {
-                    runCatching { engine.jniForceClose() }
-                    engineJob.cancel()
-                }
-                delay(BETWEEN_STRATEGIES_DELAY_MS)
-            }
+            append('\n').append(getString(R.string.smart_choose_result))
         }
     }
-
-    private suspend fun checkTarget(
-        target: TestTarget,
-        requestSlots: Semaphore,
-    ): TargetResult = supervisorScope {
-        val ping = async(Dispatchers.IO) {
-            requestSlots.withPermit { ping(target.host) }
-        }
-        if (target.pingOnly) {
-            return@supervisorScope TargetResult(target, pingMs = ping.await())
-        }
-
-        val http = async(Dispatchers.IO) {
-            requestSlots.withPermit { probeHttps(target, null) }
-        }
-        val tls12 = async(Dispatchers.IO) {
-            requestSlots.withPermit { probeHttps(target, "TLSv1.2") }
-        }
-        val tls13 = async(Dispatchers.IO) {
-            requestSlots.withPermit { probeHttps(target, "TLSv1.3") }
-        }
-        TargetResult(
-            target = target,
-            httpOk = http.await(),
-            tls12Ok = tls12.await(),
-            tls13Ok = tls13.await(),
-            pingMs = ping.await(),
-        )
-    }
-
-    private fun probeHttps(target: TestTarget, tlsVersion: String?): Boolean = runCatching {
-        val host = target.host
-        val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(PROXY_HOST, PROXY_PORT))
-        val rawSocket = Socket(proxy).apply {
-            soTimeout = REQUEST_TIMEOUT_MS
-            connect(InetSocketAddress.createUnresolved(host, 443), REQUEST_TIMEOUT_MS)
-        }
-        val sslContext = SSLContext.getInstance("TLS").apply { init(null, null, null) }
-        val sslSocket = sslContext.socketFactory
-            .createSocket(rawSocket, host, 443, true) as SSLSocket
-        sslSocket.use { socket ->
-            socket.soTimeout = REQUEST_TIMEOUT_MS
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                socket.sslParameters = socket.sslParameters.apply {
-                    endpointIdentificationAlgorithm = "HTTPS"
-                }
-            }
-            if (tlsVersion != null) {
-                if (tlsVersion !in socket.supportedProtocols) return@runCatching false
-                socket.enabledProtocols = arrayOf(tlsVersion)
-            }
-            socket.startHandshake()
-            val writer = OutputStreamWriter(socket.outputStream, Charsets.US_ASCII)
-            writer.write(
-                "GET ${target.path} HTTP/1.1\r\n" +
-                    "Host: $host\r\n" +
-                    "Range: bytes=0-16383\r\n" +
-                    "Accept: */*\r\n" +
-                    "Connection: close\r\n\r\n"
-            )
-            writer.flush()
-            val reader = BufferedReader(InputStreamReader(socket.inputStream, Charsets.ISO_8859_1))
-            val statusLine = reader.readLine().orEmpty()
-            val statusCode =
-                statusLine.split(' ').getOrNull(1)?.toIntOrNull() ?: return@runCatching false
-            while (true) {
-                val header = reader.readLine() ?: return@runCatching false
-                if (header.isEmpty()) break
-            }
-            val bodyOk = target.minBytes == 0 || readAtLeast(reader, target.minBytes)
-            statusCode in 200..499 && bodyOk
-        }
-    }.getOrDefault(false)
-
-    private fun readAtLeast(reader: BufferedReader, minimum: Int): Boolean {
-        var total = 0
-        val buffer = CharArray(2048)
-        while (total < minimum) {
-            val count = reader.read(buffer, 0, minOf(buffer.size, minimum - total))
-            if (count < 0) break
-            total += count
-        }
-        return total >= minimum
-    }
-
-    private fun ping(host: String): Double? = runCatching {
-        val process = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "2", host)
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        process.waitFor()
-        PING_TIME.find(output)?.groupValues?.get(1)?.toDoubleOrNull()
-    }.getOrNull()
-
-    private fun okLabel(value: Boolean?): String = if (value == true) "OK" else "ERR"
 
     private fun formatPing(value: Double?): String =
         value?.let { String.format(Locale.US, "%.0f ms", it) } ?: "timeout"
-
-    private data class TestTarget(
-        val name: String,
-        val host: String,
-        val category: ServiceCategory,
-        val path: String = "/",
-        val minBytes: Int = 0,
-        val pingOnly: Boolean = false,
-    )
-
-    private enum class ServiceCategory { YOUTUBE, DISCORD, NETWORK }
-
-    private data class TargetResult(
-        val target: TestTarget,
-        val httpOk: Boolean? = null,
-        val tls12Ok: Boolean? = null,
-        val tls13Ok: Boolean? = null,
-        val pingMs: Double? = null,
-    ) {
-        val pingOnly: Boolean get() = target.pingOnly
-        val protocolSuccess: Int
-            get() = listOf(httpOk, tls12Ok, tls13Ok).count { it == true }
-    }
-
-    private data class ProfileTestResult(
-        val profile: FlowsealProfile,
-        val protocolSuccess: Int,
-        val pingSuccess: Int,
-        val averagePingMs: Double?,
-        val targetResults: List<TargetResult>,
-    ) {
-        val youtubeScore: Int get() = serviceScore(ServiceCategory.YOUTUBE)
-        val discordScore: Int get() = serviceScore(ServiceCategory.DISCORD)
-        val balancedScore: Int get() = minOf(youtubeScore, discordScore)
-        val combinedScore: Int get() = (youtubeScore + discordScore) / 2
-
-        private fun serviceScore(category: ServiceCategory): Int {
-            val checks = targetResults.filter {
-                !it.pingOnly && it.target.category == category
-            }
-            if (checks.isEmpty()) return 0
-            return checks.sumOf { it.protocolSuccess } * 100 / (checks.size * 3)
-        }
-    }
 
     private class ProfileAdapter(
         profiles: List<FlowsealProfile>,
@@ -765,6 +435,11 @@ class ProfilePickerActivity : AppCompatActivity() {
 
         fun filter(value: String) {
             query = value.trim().lowercase()
+            rebuildVisible()
+        }
+
+        fun setTesting(value: Boolean) {
+            testing = value
             rebuildVisible()
         }
 
@@ -892,8 +567,8 @@ class ProfilePickerActivity : AppCompatActivity() {
                 binding.profileMethod.text = if (result == null) {
                     if (testing) binding.root.context.getString(R.string.smart_waiting) else profile.method
                 } else {
-                    "HTTP/TLS ${result.protocolSuccess}/$PROTOCOL_TEST_COUNT · " +
-                        "Ping ${result.pingSuccess}/$PING_TEST_COUNT"
+                    "HTTP/TLS ${result.protocolSuccess}/${StrategyTestRunner.PROTOCOL_TEST_COUNT} · " +
+                        "Ping ${result.pingSuccess}/${StrategyTestRunner.PING_TEST_COUNT}"
                 }
                 binding.profileDescription.text = if (result == null) {
                     profile.description
@@ -999,126 +674,6 @@ class ProfilePickerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "ProfilePicker"
-        private const val PROXY_HOST = "127.0.0.1"
-        private const val PROXY_PORT = 1080
-        private const val REQUEST_TIMEOUT_MS = 4_000
-        private const val PROXY_START_DELAY_MS = 500L
-        private const val PROXY_STOP_TIMEOUT_MS = 2_000L
-        private const val BETWEEN_STRATEGIES_DELAY_MS = 150L
-        private const val MAX_PARALLEL_REQUESTS = 8
-        private const val SAVED_RESULTS_KEY = StrategyMemory.RESULTS_KEY
         private const val TOPS_EXPANDED_KEY = "strategy_tops_expanded"
-        private const val RESULT_FORMAT_VERSION = 3
-        private val PING_TIME = Regex("""time[=<]([\d.]+)\s*ms""")
-
-        private val TARGETS = listOf(
-            TestTarget(
-                "YouTubeWeb",
-                "www.youtube.com",
-                ServiceCategory.YOUTUBE,
-                path = "/generate_204",
-            ),
-            TestTarget(
-                "YouTubeImage",
-                "i.ytimg.com",
-                ServiceCategory.YOUTUBE,
-                path = "/vi/dQw4w9WgXcQ/hqdefault.jpg",
-                minBytes = 512,
-            ),
-            TestTarget(
-                "YouTubeAPI",
-                "youtubei.googleapis.com",
-                ServiceCategory.YOUTUBE,
-            ),
-            TestTarget(
-                "YouTubeAvatar",
-                "yt3.ggpht.com",
-                ServiceCategory.YOUTUBE,
-            ),
-            TestTarget(
-                "GoogleVideoMap",
-                "redirector.googlevideo.com",
-                ServiceCategory.YOUTUBE,
-                path = "/report_mapping",
-                minBytes = 1,
-            ),
-            TestTarget(
-                "GoogleVideoManifest",
-                "manifest.googlevideo.com",
-                ServiceCategory.YOUTUBE,
-            ),
-            TestTarget(
-                "YouTubeSignaler",
-                "signaler-pa.youtube.com",
-                ServiceCategory.YOUTUBE,
-            ),
-            TestTarget(
-                "YouTubeJnnApi",
-                "jnn-pa.googleapis.com",
-                ServiceCategory.YOUTUBE,
-            ),
-            TestTarget(
-                "DiscordVoiceHost",
-                "discord.gg",
-                ServiceCategory.DISCORD,
-            ),
-            TestTarget(
-                "DiscordAPI",
-                "discord.com",
-                ServiceCategory.DISCORD,
-                path = "/api/v9/gateway",
-                minBytes = 16,
-            ),
-            TestTarget(
-                "DiscordGateway",
-                "gateway.discord.gg",
-                ServiceCategory.DISCORD,
-                path = "/?v=9&encoding=json",
-            ),
-            TestTarget(
-                "DiscordCDN",
-                "cdn.discordapp.com",
-                ServiceCategory.DISCORD,
-            ),
-            TestTarget(
-                "DiscordMedia",
-                "media.discordapp.net",
-                ServiceCategory.DISCORD,
-            ),
-            TestTarget(
-                "DiscordUpdates",
-                "updates.discord.com",
-                ServiceCategory.DISCORD,
-            ),
-            TestTarget(
-                "DiscordVoice",
-                "discord.media",
-                ServiceCategory.DISCORD,
-            ),
-            TestTarget(
-                "CloudflareDNS",
-                "1.1.1.1",
-                ServiceCategory.NETWORK,
-                pingOnly = true,
-            ),
-            TestTarget(
-                "GoogleDNS",
-                "8.8.8.8",
-                ServiceCategory.NETWORK,
-                pingOnly = true,
-            ),
-            TestTarget(
-                "Quad9DNS",
-                "9.9.9.9",
-                ServiceCategory.NETWORK,
-                pingOnly = true,
-            ),
-        )
-        private val PROTOCOL_TEST_COUNT = TARGETS.count { !it.pingOnly } * 3
-        private val PING_TEST_COUNT = TARGETS.size
-        private val profileResultComparator =
-            compareByDescending<ProfileTestResult> { it.protocolSuccess }
-                .thenByDescending { it.pingSuccess }
-                .thenBy { it.averagePingMs ?: Double.MAX_VALUE }
     }
 }

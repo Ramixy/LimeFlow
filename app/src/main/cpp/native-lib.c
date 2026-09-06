@@ -68,11 +68,16 @@ Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniStartProxy(JNIEnv *env
     reset_params();
     g_proxy_running = 1;
     optind = 1;
+    /* Invalidate the stale descriptor left by the previous engine run so a
+     * concurrent stop cannot shutdown/close a recycled fd owned by another
+     * socket in this process. */
+    server_fd = -1;
 
     int result = main(argc, argv);
 
     LOG(LOG_S, "proxy return code %d", result);
     g_proxy_running = 0;
+    server_fd = -1;
 
     for (int i = 0; i < argc; i++) free(argv[i]);
     free(argv);
@@ -89,8 +94,15 @@ Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniStopProxy(__attribute_
         return -1;
     }
 
+    if (server_fd < 0) {
+        LOG(LOG_S, "server socket is not open yet");
+        return -1;
+    }
+
     shutdown(server_fd, SHUT_RDWR);
-    g_proxy_running = 0;
+    /* g_proxy_running stays set until jniStartProxy returns from main(), so a
+     * start issued while the old engine is still winding down is rejected
+     * instead of racing it for the globals or the listening port. */
 
     return 0;
 }
@@ -99,13 +111,19 @@ JNIEXPORT jint JNICALL
 Java_io_github_dovecoteescapee_byedpi_core_ByeDpiProxy_jniForceClose(__attribute__((unused)) JNIEnv *env, __attribute__((unused)) jobject thiz) {
     LOG(LOG_S, "closing server socket (fd: %d)", server_fd);
 
+    if (server_fd < 0) {
+        LOG(LOG_S, "server socket is not open");
+        return -1;
+    }
+
     if (close(server_fd) == -1) {
         LOG(LOG_S, "failed to close server socket (fd: %d)", server_fd);
+        server_fd = -1;
         return -1;
     }
 
     LOG(LOG_S, "proxy socket force close");
-    g_proxy_running = 0;
+    server_fd = -1;
 
     return 0;
 }

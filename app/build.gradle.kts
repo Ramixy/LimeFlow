@@ -12,8 +12,8 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 23
-        versionName = "1.1.9"
+        versionCode = 28
+        versionName = "1.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -92,12 +92,25 @@ tasks.register<Exec>("runNdkBuild") {
     }
     setArgs(listOf(
         "NDK_PROJECT_PATH=build/intermediates/ndkBuild",
-        "NDK_LIBS_OUT=src/main/jniLibs",
+        // Выводим в build/, а не в src/main/jniLibs: ndk-build чистит каталог
+        // вывода и удалял бы вшитый там libnfqws.so.
+        "NDK_LIBS_OUT=build/intermediates/ndkBuild/hev-libs",
         "APP_BUILD_SCRIPT=src/main/jni/Android.mk",
         "NDK_APPLICATION_MK=src/main/jni/Application.mk"
     ))
 
     println("Command: $commandLine")
+}
+
+android {
+    sourceSets {
+        getByName("main") {
+            // libhev-socks5-tunnel.so собирается в build/, libnfqws.so лежит в
+            // отдельном каталоге, который ndk-build не трогает.
+            jniLibs.srcDir("build/intermediates/ndkBuild/hev-libs")
+            jniLibs.srcDir("src/main/jniRootLibs")
+        }
+    }
 }
 
 tasks.preBuild {

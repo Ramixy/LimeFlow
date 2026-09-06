@@ -111,6 +111,8 @@ static const char help_text[] = {
     "                              Replaced: ? - rand let, # - rand num, * - rand let/num\n"
     #endif
     "    -t, --ttl <num>           TTL of fake packets, default 8\n"
+    "    -z, --auto-ttl <d:m:M>    Auto TTL: fake TTL = remote TTL - delta,\n"
+    "                              clamped to min:max, probed via UDP and cached\n"
     "    -O, --fake-offset <pos_t> Fake data start offset\n"
     "    -l, --fake-data <f|:str>  Set custom fake packet\n"
     "    -Q, --fake-tls-mod <flag> Modify fake TLS CH: rand,orig,msize=<int>\n"
@@ -174,6 +176,7 @@ const struct option options[] = {
     {"fake-sni",      1, 0, 'n'},
     #endif
     {"ttl",           1, 0, 't'},
+    {"auto-ttl",      1, 0, 'z'},
     {"fake-data",     1, 0, 'l'},
     {"fake-offset",   1, 0, 'O'},
     {"fake-tls-mod",  1, 0, 'Q'},
@@ -567,6 +570,14 @@ int parse_offset(struct part *part, const char *str)
                 break;
             case 'm':
                 part->flag |= OFFSET_MID;
+                break;
+            case 'd':
+                /* zapret midsld: middle of the second-level domain */
+                part->flag |= OFFSET_SNI | OFFSET_SLD;
+                break;
+            case 'x':
+                /* zapret sniext: start of the SNI extension */
+                part->flag |= OFFSET_SNI | OFFSET_EXTSTART;
                 break;
             case 'r': //
                 part->flag |= OFFSET_RAND;
@@ -1058,10 +1069,44 @@ int parse_args(int argc, char **argv)
             
         case 't':
             val = strtol(optarg, &end, 0);
-            if (val <= 0 || val > 255 || *end) 
+            if (val <= 0 || val > 255 || *end)
                 invalid = 1;
             else
                 dp->ttl = val;
+            break;
+
+        case 'z':;
+            /* --auto-ttl <delta:min:max>: fake TTL = remote TTL - delta,
+             * clamped; the remote TTL is probed via UDP and cached. */
+            dp->autottl.set = 1;
+            dp->autottl.delta = 1;
+            dp->autottl.min = 3;
+            dp->autottl.max = 128;
+            {
+                char *ae = optarg;
+                long av;
+                for (int ai = 0; ai < 3; ai++) {
+                    av = strtol(ae, &ae, 0);
+                    if (ae == optarg && av == 0 && *ae != ':') {
+                        invalid = 1;
+                        break;
+                    }
+                    switch (ai) {
+                        case 0: dp->autottl.delta = (int)av; break;
+                        case 1: dp->autottl.min = (int)av; break;
+                        case 2: dp->autottl.max = (int)av; break;
+                    }
+                    if (*ae != ':' || ai == 2) {
+                        if (*ae) invalid = 1;
+                        break;
+                    }
+                    ae++;
+                }
+                if (dp->autottl.min > dp->autottl.max
+                        || dp->autottl.delta < 0) {
+                    invalid = 1;
+                }
+            }
             break;
             
         case 'S':
@@ -1079,11 +1124,14 @@ int parse_args(int argc, char **argv)
             end = optarg;
             while (end && !invalid) {
                 switch (*end) {
-                    case 'r': 
+                    case 'r':
                         dp->fake_mod |= FM_RAND;
                         break;
-                    case 'o': 
+                    case 'o':
                         dp->fake_mod |= FM_ORIG;
+                        break;
+                    case 'd':
+                        dp->fake_mod |= FM_DUPSID;
                         break;
                     case 'm': 
                         if ((end = strchr(end, '='))) {

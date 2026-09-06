@@ -172,7 +172,9 @@ class MainActivity : AppCompatActivity() {
 
         @SuppressLint("UnspecifiedRegisterReceiverFlag")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(receiver, intentFilter, RECEIVER_EXPORTED)
+            // Status broadcasts come only from this app's services; an exported
+            // receiver would let other apps spoof them.
+            registerReceiver(receiver, intentFilter, RECEIVER_NOT_EXPORTED)
         } else {
             registerReceiver(receiver, intentFilter)
         }

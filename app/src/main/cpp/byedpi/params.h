@@ -28,6 +28,10 @@
 #define OFFSET_SNI 8
 #define OFFSET_HOST 16
 #define OFFSET_START 32
+/* +sd (zapret midsld): middle of the second-level domain */
+#define OFFSET_SLD 64
+/* +sx (zapret sniext): start of the SNI extension, 9 bytes before the host */
+#define OFFSET_EXTSTART 128
 
 #define DETECT_HTTP_LOCAT 1
 #define DETECT_TLS_ERR 2
@@ -51,6 +55,15 @@
 
 #define FM_RAND 1
 #define FM_ORIG 2
+/* -Qd (zapret dupsid): copy the real session id into the fake */
+#define FM_DUPSID 4
+
+struct autottl_params {
+    bool set;
+    int delta;
+    int min;
+    int max;
+};
 
 enum demode {
     DESYNC_NONE,
@@ -93,6 +106,7 @@ struct packet {
 
 struct desync_params {
     int ttl;
+    struct autottl_params autottl;
     bool md5sig;
     struct packet fake_data;
     int udp_fake_count;

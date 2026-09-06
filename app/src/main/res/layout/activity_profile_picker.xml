@@ -87,6 +87,7 @@
             android:paddingVertical="8dp">
 
             <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/smart_test_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/smart_test"

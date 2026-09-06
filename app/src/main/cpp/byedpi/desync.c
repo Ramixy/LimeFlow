@@ -12,6 +12,8 @@
     #include <sys/socket.h>
     #include <sys/mman.h>
     #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <poll.h>
     #include <fcntl.h>
     
     #ifndef __linux__
@@ -40,14 +42,167 @@ int setttl(int fd, int ttl)
 {
     int ret6 = setsockopt(fd, IPPROTO_IPV6,
         IPV6_UNICAST_HOPS, (char *)&ttl, sizeof(ttl));
-    int ret4 = setsockopt(fd, IPPROTO_IP, 
+    int ret4 = setsockopt(fd, IPPROTO_IP,
         IP_TTL, (char *)&ttl, sizeof(ttl));
-    
+
     if (ret4 && ret6) {
         uniperror("setttl");
         return -1;
     }
     return 0;
+}
+
+
+/* Auto-TTL (port of zapret --dpi-desync-autottl): the remote hop distance is
+ * learned once per destination with a QUIC Version Negotiation probe and
+ * cached, so fake packets die right after the DPI instead of at a hand-picked
+ * -t value. */
+struct ttl_ent {
+    union sockaddr_u addr;
+    int ttl;
+    time_t at;
+};
+
+#define TTL_CACHE_N 16
+#define TTL_CACHE_TTL 300
+
+static struct ttl_ent ttl_cache[TTL_CACHE_N];
+static int ttl_cache_i = 0;
+
+static int addr_equal(const union sockaddr_u *a, const union sockaddr_u *b)
+{
+    if (a->sa.sa_family != b->sa.sa_family) {
+        return 0;
+    }
+    if (a->sa.sa_family == AF_INET) {
+        return a->in.sin_addr.s_addr == b->in.sin_addr.s_addr
+            && a->in.sin_port == b->in.sin_port;
+    }
+    return memcmp(&a->in6.sin6_addr, &b->in6.sin6_addr,
+                sizeof(b->in6.sin6_addr)) == 0
+        && a->in6.sin6_port == b->in6.sin6_port;
+}
+
+static int lookup_ttl(const union sockaddr_u *peer)
+{
+    time_t now = time(0);
+    for (int i = 0; i < TTL_CACHE_N; i++) {
+        if (ttl_cache[i].ttl > 0
+                && now - ttl_cache[i].at < TTL_CACHE_TTL
+                && addr_equal(&ttl_cache[i].addr, peer)) {
+            return ttl_cache[i].ttl;
+        }
+    }
+    return -1;
+}
+
+static void store_ttl(const union sockaddr_u *peer, int ttl)
+{
+    struct ttl_ent *e = &ttl_cache[ttl_cache_i];
+    ttl_cache_i = (ttl_cache_i + 1) % TTL_CACHE_N;
+    memcpy(e, peer, sizeof(*peer));
+    e->ttl = ttl;
+    e->at = time(0);
+}
+
+#ifndef _WIN32
+/* Sends a QUIC long-header packet with an unknown version; QUIC servers must
+ * answer with Version Negotiation, which reveals their hop distance. */
+static int probe_remote_ttl(const union sockaddr_u *peer)
+{
+    int fd = socket(peer->sa.sa_family, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    int rttl = -1;
+    do {
+        int one = 1;
+        if (peer->sa.sa_family == AF_INET6) {
+            if (setsockopt(fd, IPPROTO_IPV6,
+                    IPV6_RECVHOPLIMIT, (char *)&one, sizeof(one)) < 0) {
+                break;
+            }
+        }
+        else if (setsockopt(fd, IPPROTO_IP,
+                IP_RECVTTL, (char *)&one, sizeof(one)) < 0) {
+            break;
+        }
+        if (connect(fd, &peer->sa, sizeof(*peer)) < 0) {
+            break;
+        }
+        unsigned char req[64];
+        memset(req, 0, sizeof(req));
+        req[0] = 0xC0;
+        req[1] = 0x1a; req[2] = 0x2a; req[3] = 0x3a; req[4] = 0x4a;
+        req[5] = 8;
+        for (int i = 0; i < 8; i++) {
+            req[6 + i] = (unsigned char)(rand() % 256);
+        }
+        if (send(fd, req, sizeof(req), 0) < 0) {
+            break;
+        }
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        if (poll(&pfd, 1, 120) <= 0) {
+            break;
+        }
+        unsigned char rs[512];
+        struct iovec iov = { .iov_base = rs, .iov_len = sizeof(rs) };
+        struct msghdr msg = { 0 };
+        char cbuf[CMSG_SPACE(sizeof(int))];
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = cbuf;
+        msg.msg_controllen = sizeof(cbuf);
+        if (recvmsg(fd, &msg, 0) <= 0) {
+            break;
+        }
+        for (struct cmsghdr *cm = CMSG_FIRSTHDR(&msg); cm;
+                cm = CMSG_NXTHDR(&msg, cm)) {
+            if ((cm->cmsg_level == IPPROTO_IP && cm->cmsg_type == IP_RECVTTL)
+                    || (cm->cmsg_level == IPPROTO_IPV6
+                        && cm->cmsg_type == IPV6_HOPLIMIT)) {
+                rttl = *(int *)CMSG_DATA(cm);
+            }
+        }
+    } while (0);
+    close(fd);
+    return rttl;
+}
+#else
+static int probe_remote_ttl(const union sockaddr_u *peer)
+{
+    return -1;
+}
+#endif
+
+static int fake_ttl_for(const struct desync_params *opt, int fd)
+{
+    if (!opt->autottl.set) {
+        return opt->ttl ? opt->ttl : DEFAULT_TTL;
+    }
+    union sockaddr_u peer;
+    socklen_t pl = sizeof(peer);
+    int obs = -1;
+    if (getpeername(fd, &peer.sa, &pl) == 0) {
+        obs = lookup_ttl(&peer);
+        if (obs < 0) {
+            obs = probe_remote_ttl(&peer);
+            if (obs > 0) {
+                store_ttl(&peer, obs);
+            }
+        }
+    }
+    if (obs <= 0) {
+        return opt->ttl ? opt->ttl : DEFAULT_TTL;
+    }
+    int t = obs - opt->autottl.delta;
+    if (t < opt->autottl.min) {
+        t = opt->autottl.min;
+    }
+    if (t > opt->autottl.max) {
+        t = opt->autottl.max;
+    }
+    return t;
 }
 
 
@@ -160,6 +315,16 @@ static struct packet get_tcp_fake(const char *buffer, ssize_t n,
     if (opt->fake_mod & FM_RAND) {
         randomize_tls(p, ps);
     }
+    /* -Qd (dupsid): after randomization, restore the real session id so the
+     * fake stays consistent with the client's hello. */
+    if ((opt->fake_mod & FM_DUPSID) && info->type == IS_HTTPS
+            && n > 44) {
+        uint8_t sid_len = (uint8_t )buffer[43];
+        if (n >= (ssize_t)(44 + sid_len)
+                && ps >= (ssize_t)(44 + sid_len)) {
+            memcpy(p + 44, buffer + 44, sid_len);
+        }
+    }
     pkt.data = p;
     pkt.size = ps;
     
@@ -214,8 +379,8 @@ static ssize_t send_fake(struct eval *val, const char *buffer,
         char *p = pkt.data + pkt.off;
         val->restore_fake = p;
         val->restore_fake_len = pkt.size;
-        
-        if (setttl(val->fd, opt->ttl ? opt->ttl : DEFAULT_TTL) < 0) {
+
+        if (setttl(val->fd, fake_ttl_for(opt, val->fd)) < 0) {
             break;
         }
         val->restore_ttl = 1;
@@ -338,7 +503,7 @@ static ssize_t send_fake(struct eval *val, const char *buffer,
             uniperror("SetFilePointer");
             break;
         }
-        if (setttl(val->fd, opt->ttl ? opt->ttl : DEFAULT_TTL) < 0) {
+        if (setttl(val->fd, fake_ttl_for(opt, val->fd)) < 0) {
             break;
         }
         s->ov.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -446,14 +611,29 @@ static long gen_offset(long pos, int flag,
 {
     if (flag & (OFFSET_SNI | OFFSET_HOST)) {
         init_proto_info(buffer, n, info);
-        
-        if (!info->host_pos 
+
+        if (!info->host_pos
                 || ((flag & OFFSET_SNI) && info->type != IS_HTTPS)) {
             return -1;
         }
         pos += info->host_pos;
-        
-        if (flag & OFFSET_END)
+
+        if (flag & OFFSET_EXTSTART) {
+            if (info->host_pos < 9) {
+                return -1;
+            }
+            pos -= 9;
+        }
+        else if (flag & OFFSET_SLD) {
+            /* middle of the second-level domain (zapret midsld) */
+            long tld = info->host_len;
+            while (tld > 0 && buffer[info->host_pos + tld - 1] != '.') tld--;
+            long dot = (tld > 0) ? tld - 1 : info->host_len;
+            long sld = dot;
+            while (sld > 0 && buffer[info->host_pos + sld - 1] != '.') sld--;
+            pos += (sld + dot) / 2;
+        }
+        else if (flag & OFFSET_END)
             pos += info->host_len;
         else if (flag & OFFSET_MID)
             pos += (info->host_len / 2);

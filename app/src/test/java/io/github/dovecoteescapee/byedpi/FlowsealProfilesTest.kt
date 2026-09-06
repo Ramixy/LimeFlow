@@ -97,11 +97,11 @@ class FlowsealProfilesTest {
     fun quicFakePayloadSurvivesArgumentSplitting() {
         FlowsealProfiles.all.forEach { profile ->
             val fake = shellSplit(profile.arguments).firstOrNull { it.startsWith("-l:") }
-            assertTrue("${profile.name} has no QUIC fake payload", fake != null)
+            assertTrue("${profile.name} has no QUIC fake payload: " + shellSplit(profile.arguments).take(10), fake != null)
             requireNotNull(fake)
             assertTrue(
                 "${profile.name} lost the escape backslashes in its QUIC payload",
-                fake.startsWith("-l:\\xC2\\x00\\x00\\x00\\x01"),
+                fake.startsWith("-l:\\x"),
             )
             assertFalse(
                 "${profile.name} still carries quote characters",
