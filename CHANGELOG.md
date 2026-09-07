@@ -1,5 +1,10 @@
 # История изменений
 
+## 1.4.1
+
+- Раздельные APK по архитектурам (splits): arm64-v8a, armeabi-v7a и universal. x86/x86_64 не выпускаются — для них нет libtgwsproxy.so.
+
+
 ## 1.4.0
 
 ### Zapret Engine (root)

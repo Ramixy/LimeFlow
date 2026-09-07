@@ -8,6 +8,10 @@
   Локальная обработка Android-трафика без root с интегрированным Telegram WebSocket Proxy.
 </p>
 
+## Что нового в 1.4.1
+
+- Раздельные APK под архитектуры: arm64-v8a, armeabi-v7a и universal — меньше размер, нативные библиотеки всегда совпадают с устройством.
+
 ## Что нового в 1.4.0
 
 Версия 1.4.0 добавляет второй движок и переносит приёмы zapret:
@@ -29,7 +33,9 @@
 
 ## Скачать
 
-- [LimeFlow 1.4.0 Debug APK](releases/LimeFlow-1.4.0-debug.apk)
+- [LimeFlow 1.4.1 Debug APK — arm64-v8a](releases/LimeFlow-1.4.1-debug-arm64-v8a.apk)
+- [LimeFlow 1.4.1 Debug APK — armeabi-v7a](releases/LimeFlow-1.4.1-debug-armeabi-v7a.apk)
+- [LimeFlow 1.4.1 Debug APK — universal](releases/LimeFlow-1.4.1-debug-universal.apk)
 - [Раздел Releases](../../releases)
 
 APK имеет пакет `app.alt11.mobile`, минимальная версия Android — 6.0.

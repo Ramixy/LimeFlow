@@ -12,14 +12,26 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 28
-        versionName = "1.4.0"
+        versionCode = 29
+        versionName = "1.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
             abiFilters.add("armeabi-v7a")
             abiFilters.add("arm64-v8a")
+        }
+    }
+
+    // Раздельные APK под архитектуры + universal: меньше размер, меньше багов
+    // от несовпадающих нативных библиотек. x86/x86_64 не выпускаются: для них
+    // нет libtgwsproxy.so — раздел Proxy падал бы на эмуляторах.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = true
         }
     }
 
