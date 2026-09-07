@@ -34,6 +34,7 @@
         tools:targetApi="34">
         <activity
             android:name=".activities.MainActivity"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -59,7 +60,7 @@
         <activity
             android:name=".activities.SettingsActivity"
             android:label="@string/title_settings"
-            android:exported="true"/>
+            android:exported="false"/>
 
         <activity
             android:name=".activities.IntegratedProxyActivity"

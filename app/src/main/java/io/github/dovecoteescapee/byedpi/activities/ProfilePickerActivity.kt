@@ -16,7 +16,9 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -122,7 +124,9 @@ class ProfilePickerActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         lifecycleScope.launch {
-            StrategyTestRunner.state.collect { state -> render(state) }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                StrategyTestRunner.state.collect { state -> render(state) }
+            }
         }
         binding.root.alpha = 0f
         binding.root.translationY = 24f

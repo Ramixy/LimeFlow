@@ -17,10 +17,11 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
     companion object {
         private val TAG: String = MainSettingsFragment::class.java.simpleName
 
-        fun setTheme(name: String) =
-            themeByName(name)?.let {
-                AppCompatDelegate.setDefaultNightMode(it)
-            } ?: throw IllegalStateException("Invalid value for app_theme: $name")
+        fun setTheme(name: String) {
+            // A corrupted preference must not crash the settings screen.
+            val mode = themeByName(name) ?: AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            AppCompatDelegate.setDefaultNightMode(mode)
+        }
 
         private fun themeByName(name: String): Int? = when (name) {
             "system" -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM

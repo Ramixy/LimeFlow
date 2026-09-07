@@ -17,8 +17,8 @@ enum class Mode {
 
         fun fromString(name: String): Mode = when (name) {
             "proxy" -> Proxy
-            "vpn" -> VPN
-            else -> throw IllegalArgumentException("Invalid mode: $name")
+            // A corrupted/imported preference must not crash the app at startup.
+            else -> VPN
         }
     }
 }

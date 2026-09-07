@@ -47,6 +47,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
@@ -93,11 +94,15 @@ class MainActivity : AppCompatActivity() {
                 val logs = collectLogs()
 
                 if (logs == null) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        R.string.logs_failed,
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Log.e(TAG, "Failed to collect logs")
+                    // Toast.show() must run on a Looper thread; this block is on IO.
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            R.string.logs_failed,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 } else {
                     val uri = it.data?.data ?: run {
                         Log.e(TAG, "No data in result")
@@ -181,6 +186,9 @@ class MainActivity : AppCompatActivity() {
         receiverRegistered = true
 
         binding.statusButton.setOnClickListener {
+            // Ignore taps while a start/stop transition is in flight: a second
+            // START would tear down the proxy that is still connecting.
+            if (isStartingVisual) return@setOnClickListener
             val (status, _) = appStatus
             when (status) {
                 AppStatus.Halted -> {
@@ -248,6 +256,12 @@ class MainActivity : AppCompatActivity() {
         val preferences = getPreferences()
         if (preferences.getInt("limeflow_engine_version", 0) >= 12) return
 
+        // FlowsealProfiles.select() force-enables command-line mode; on an
+        // upgrade the user's explicit UI-vs-CMD choice must survive the
+        // re-apply. On a fresh install there is no choice yet, keep CMD.
+        val isUpgrade = preferences.contains("byedpi_enable_cmd_settings")
+        val userCmdSetting = preferences.getBoolean("byedpi_enable_cmd_settings", true)
+
         preferences.edit()
             .putString("byedpi_mode", "vpn")
             .putBoolean("byedpi_enable_cmd_settings", true)
@@ -255,6 +269,11 @@ class MainActivity : AppCompatActivity() {
             .putInt("limeflow_engine_version", 12)
             .apply()
         FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
+        if (isUpgrade) {
+            preferences.edit()
+                .putBoolean("byedpi_enable_cmd_settings", userCmdSetting)
+                .apply()
+        }
         BypassHosts.writeHostFile(this, preferences)
     }
 
@@ -429,36 +448,70 @@ class MainActivity : AppCompatActivity() {
             AppFilterActivity.FILTER_PACKAGES,
             emptySet(),
         ).orEmpty().toMutableSet()
-        val excludedNow =
-            preferences.getString(
-                AppFilterActivity.FILTER_MODE,
-                AppFilterActivity.MODE_ALL,
-            ) == AppFilterActivity.MODE_EXCLUDE &&
+        val filterMode = preferences.getString(
+            AppFilterActivity.FILTER_MODE,
+            AppFilterActivity.MODE_ALL,
+        ) ?: AppFilterActivity.MODE_ALL
+        val telegramIncluded = when (filterMode) {
+            AppFilterActivity.MODE_EXCLUDE ->
+                AppFilterActivity.TELEGRAM_PACKAGES.none { it in packages }
+            AppFilterActivity.MODE_INCLUDE ->
                 AppFilterActivity.TELEGRAM_PACKAGES.any { it in packages }
-
-        if (excludedNow) {
-            packages.removeAll(AppFilterActivity.TELEGRAM_PACKAGES)
-        } else {
-            packages.addAll(AppFilterActivity.TELEGRAM_PACKAGES)
+            else -> true
         }
-        preferences.edit()
-            .putString(
-                AppFilterActivity.FILTER_MODE,
-                if (excludedNow && packages.isEmpty()) {
-                    AppFilterActivity.MODE_ALL
-                } else {
-                    AppFilterActivity.MODE_EXCLUDE
-                },
-            )
-            .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
-            .apply()
+
+        // Toggle Telegram without discarding the semantics of the other
+        // filtered packages (an INCLUDE list must not become an EXCLUDE list).
+        if (telegramIncluded) {
+            if (filterMode == AppFilterActivity.MODE_INCLUDE) {
+                packages.removeAll(AppFilterActivity.TELEGRAM_PACKAGES)
+                preferences.edit()
+                    .putString(
+                        AppFilterActivity.FILTER_MODE,
+                        if (packages.isEmpty()) {
+                            AppFilterActivity.MODE_ALL
+                        } else {
+                            AppFilterActivity.MODE_INCLUDE
+                        },
+                    )
+                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
+                    .apply()
+            } else {
+                packages.addAll(AppFilterActivity.TELEGRAM_PACKAGES)
+                preferences.edit()
+                    .putString(AppFilterActivity.FILTER_MODE, AppFilterActivity.MODE_EXCLUDE)
+                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
+                    .apply()
+            }
+        } else {
+            if (filterMode == AppFilterActivity.MODE_INCLUDE) {
+                packages.addAll(AppFilterActivity.TELEGRAM_PACKAGES)
+                preferences.edit()
+                    .putString(AppFilterActivity.FILTER_MODE, AppFilterActivity.MODE_INCLUDE)
+                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
+                    .apply()
+            } else {
+                packages.removeAll(AppFilterActivity.TELEGRAM_PACKAGES)
+                preferences.edit()
+                    .putString(
+                        AppFilterActivity.FILTER_MODE,
+                        if (packages.isEmpty()) {
+                            AppFilterActivity.MODE_ALL
+                        } else {
+                            AppFilterActivity.MODE_EXCLUDE
+                        },
+                    )
+                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
+                    .apply()
+            }
+        }
         updateDashboardInfo()
         Toast.makeText(
             this,
-            if (excludedNow) {
-                R.string.flow_telegram_now_included
-            } else {
+            if (telegramIncluded) {
                 R.string.flow_telegram_now_excluded
+            } else {
+                R.string.flow_telegram_now_included
             },
             Toast.LENGTH_SHORT,
         ).show()

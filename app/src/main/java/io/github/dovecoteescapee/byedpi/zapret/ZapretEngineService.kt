@@ -52,15 +52,20 @@ class ZapretEngineService : LifecycleService() {
         }
 
         fun stop(context: Context) {
-            context.startService(
+            androidx.core.content.ContextCompat.startForegroundService(
+                context,
                 Intent(context, ZapretEngineService::class.java).apply { action = ACTION_STOP }
             )
         }
 
         fun hasRoot(): Boolean = runCatching {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            // A pending su prompt or a wedged su binary must not hang the caller.
+            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                return false
+            }
             val output = process.inputStream.bufferedReader().use { it.readText() }
-            process.waitFor()
             output.contains("uid=0")
         }.getOrDefault(false)
     }
@@ -83,7 +88,10 @@ class ZapretEngineService : LifecycleService() {
             ACTION_START -> {
                 val strategy = intent.getStringExtra("strategy") ?: "general"
                 lifecycleScope.launch { startEngine(strategy) }
-                START_STICKY
+                // A sticky restart delivers a null intent; re-running the engine
+                // without a start command would leave an uncontrolled foreground
+                // service doing nothing.
+                START_NOT_STICKY
             }
 
             ACTION_STOP, STOP_ACTION -> {
@@ -129,18 +137,53 @@ class ZapretEngineService : LifecycleService() {
                 process = Runtime.getRuntime()
                     .exec(arrayOf("su", "-c", "sh ${scriptFile.absolutePath}"))
                 // Движок должен жить: если он умер сразу — ошибка конфигурации.
+                // Вывод нужно постоянно дренировать, иначе пайп (~64 КБ)
+                // переполнится и nfqws зависнет на записи.
+                val proc = process!!
+                Thread { proc.inputStream.use { it.copyTo(java.io.ByteArrayOutputStream()) } }.apply {
+                    isDaemon = true
+                    start()
+                }
+                Thread { proc.errorStream.use { it.copyTo(java.io.ByteArrayOutputStream()) } }.apply {
+                    isDaemon = true
+                    start()
+                }
                 Thread.sleep(1_500)
-                if (!process!!.isAlive) {
-                    throw IllegalStateException("nfqws exited: " + process!!.inputStream.bufferedReader().readText().take(200))
+                if (!proc.isAlive) {
+                    throw IllegalStateException("nfqws exited: " + proc.exitValue())
                 }
                 _state.value = ZapretState.Running
                 _statusText.value = getString(R.string.zapret_running_status)
             }
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to start zapret engine", error)
+            // A failed start must roll back: iptables rules from the script may
+            // already be installed while the queue is dead.
+            cleanupEngine()
             _state.value = ZapretState.Failed
             _statusText.value = error.message ?: getString(R.string.zapret_failed)
             stopSelf()
+        }
+    }
+
+    private suspend fun cleanupEngine() {
+        withContext(Dispatchers.IO) {
+            runCatching { process?.destroy() }
+            process = null
+            val cleanup = buildString {
+                for (tool in listOf("iptables", "ip6tables")) {
+                    // -D removes one occurrence per call; delete any duplicates.
+                    append("for i in 1 2 3 4; do $tool -t mangle -D OUTPUT -j LIMEFLOW 2>/dev/null; done\n")
+                    append("$tool -t mangle -X LIMEFLOW 2>/dev/null\n")
+                }
+                append("pkill -f libnfqws.so 2>/dev/null\n")
+            }
+            val script = File(filesDir, "zapret/cleanup.sh")
+            script.writeText(cleanup)
+            runCatching {
+                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "sh ${script.absolutePath}"))
+                p.waitFor()
+            }
         }
     }
 
@@ -168,25 +211,9 @@ class ZapretEngineService : LifecycleService() {
     }
 
     private suspend fun stopEngine() {
-        withContext(Dispatchers.IO) {
-            runCatching { process?.destroy() }
-            process = null
-            val cleanup = buildString {
-                for (tool in listOf("iptables", "ip6tables")) {
-                    append("$tool -t mangle -D OUTPUT -j LIMEFLOW 2>/dev/null\n")
-                    append("$tool -t mangle -X LIMEFLOW 2>/dev/null\n")
-                }
-                append("pkill -f libnfqws.so 2>/dev/null\n")
-            }
-            val script = File(filesDir, "zapret/cleanup.sh")
-            script.writeText(cleanup)
-            runCatching {
-                val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "sh ${script.absolutePath}"))
-                p.waitFor()
-            }
-            _state.value = ZapretState.Halted
-            _statusText.value = getString(R.string.zapret_stopped_status)
-        }
+        cleanupEngine()
+        _state.value = ZapretState.Halted
+        _statusText.value = getString(R.string.zapret_stopped_status)
         stopSelf()
     }
 

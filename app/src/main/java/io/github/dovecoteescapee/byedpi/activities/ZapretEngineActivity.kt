@@ -15,7 +15,9 @@ import io.github.dovecoteescapee.byedpi.data.AppStatus
 import io.github.dovecoteescapee.byedpi.utility.applyLimeFlowPalette
 import io.github.dovecoteescapee.byedpi.zapret.ZapretEngineService
 import io.github.dovecoteescapee.byedpi.zapret.ZapretStrategies
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ZapretEngineActivity : AppCompatActivity() {
     private lateinit var binding: ActivityZapretEngineBinding
@@ -28,16 +30,24 @@ class ZapretEngineActivity : AppCompatActivity() {
         binding = ActivityZapretEngineBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        hasRoot = ZapretEngineService.hasRoot()
-        binding.zapretRootStatus.text = getString(
-            if (hasRoot) R.string.zapret_root_ok else R.string.zapret_root_missing
-        )
-        binding.zapretRootStatus.setTextColor(
-            androidx.core.content.ContextCompat.getColor(
-                this,
-                if (hasRoot) R.color.lime_connected else R.color.youtube_red,
-            )
-        )
+        // `su` can hang for seconds while waiting for a user prompt; never
+        // block the main thread on it.
+        lifecycleScope.launch(Dispatchers.IO) {
+            val root = ZapretEngineService.hasRoot()
+            withContext(Dispatchers.Main) {
+                hasRoot = root
+                binding.zapretRootStatus.text = getString(
+                    if (hasRoot) R.string.zapret_root_ok else R.string.zapret_root_missing
+                )
+                binding.zapretRootStatus.setTextColor(
+                    androidx.core.content.ContextCompat.getColor(
+                        this@ZapretEngineActivity,
+                        if (hasRoot) R.color.lime_connected else R.color.youtube_red,
+                    )
+                )
+                renderState(ZapretEngineService.state.value)
+            }
+        }
 
         val strategies = ZapretStrategies.list()
         binding.zapretStrategy.setAdapter(

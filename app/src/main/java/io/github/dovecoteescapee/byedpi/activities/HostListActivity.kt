@@ -9,8 +9,11 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import io.github.dovecoteescapee.byedpi.R
@@ -45,6 +48,7 @@ class HostListActivity : AppCompatActivity() {
             },
             onRemoveCustom = { host ->
                 BypassHosts.removeCustom(getPreferences(), host.domain)
+                persistStrategy()
                 reload()
             },
         )
@@ -117,8 +121,11 @@ class HostListActivity : AppCompatActivity() {
 
     private fun persistStrategy() {
         val preferences = getPreferences()
-        BypassHosts.writeHostFile(this, preferences)
-        FlowsealProfiles.refreshSelected(preferences)
+        // Disk I/O must not run on the main thread; every checkbox toggle calls this.
+        lifecycleScope.launch(Dispatchers.IO) {
+            BypassHosts.writeHostFile(applicationContext, preferences)
+            FlowsealProfiles.refreshSelected(preferences)
+        }
     }
 
     private fun reload() {

@@ -271,7 +271,7 @@ object StrategyTestRunner {
 
     private fun findFreePort(): Int = runCatching {
         ServerSocket(0).use { it.localPort }
-    }.getOrDefault(1080)
+    }.getOrDefault(-1)
 
     private suspend fun checkTarget(
         target: TestTarget,
@@ -365,7 +365,8 @@ object StrategyTestRunner {
             .start()
         val output = process.inputStream.bufferedReader().use { it.readText() }
         if (!process.waitFor(3, TimeUnit.SECONDS)) {
-            process.destroy()
+            process.destroyForcibly()
+            process.waitFor(1, TimeUnit.SECONDS)
             return@runCatching null
         }
         PING_TIME.find(output)?.groupValues?.get(1)?.toDoubleOrNull()

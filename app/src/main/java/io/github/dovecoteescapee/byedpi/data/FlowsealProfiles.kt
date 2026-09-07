@@ -696,22 +696,26 @@ object FlowsealProfiles {
         val stored = JSONArray(preferences.getString(CUSTOM_KEY, "[]"))
         buildList {
             for (index in 0 until stored.length()) {
-                val item = stored.getJSONObject(index)
-                val name = item.optString("name").trim()
-                val arguments = item.optString("arguments").trim()
-                if (name.isEmpty() || arguments.isEmpty()) continue
-                add(
-                    FlowsealProfile(
-                        id = item.getString("id"),
-                        name = name,
-                        method = "пользовательская",
-                        description = "Собственная стратегия LimeFlow",
-                        arguments = arguments,
-                        custom = true,
-                        kind = ProfileKind.CUSTOM,
-                        badge = "Своя",
+                // One corrupted entry must not discard every custom profile.
+                runCatching {
+                    val item = stored.getJSONObject(index)
+                    val name = item.optString("name").trim()
+                    val arguments = item.optString("arguments").trim()
+                    val id = item.optString("id").ifEmpty { null } ?: return@runCatching
+                    if (name.isEmpty() || arguments.isEmpty()) return@runCatching
+                    add(
+                        FlowsealProfile(
+                            id = id,
+                            name = name,
+                            method = "пользовательская",
+                            description = "Собственная стратегия LimeFlow",
+                            arguments = arguments,
+                            custom = true,
+                            kind = ProfileKind.CUSTOM,
+                            badge = "Своя",
+                        )
                     )
-                )
+                }
             }
         }
     }.getOrDefault(emptyList())

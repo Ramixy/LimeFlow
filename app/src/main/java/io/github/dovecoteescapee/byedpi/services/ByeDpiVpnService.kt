@@ -13,6 +13,7 @@ import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.activities.AppFilterActivity
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
+import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyCmdPreferences
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyPreferences
 import io.github.dovecoteescapee.byedpi.core.TProxyService
 import io.github.dovecoteescapee.byedpi.data.*
@@ -35,6 +36,7 @@ class ByeDpiVpnService : LifecycleVpnService() {
     private var proxyJob: Job? = null
     private var trafficJob: Job? = null
     private var tunFd: ParcelFileDescriptor? = null
+    private var configFile: File? = null
     private val mutex = Mutex()
     private var stopping: Boolean = false
 
@@ -86,22 +88,23 @@ class ByeDpiVpnService : LifecycleVpnService() {
     private suspend fun start() {
         Log.i(TAG, "Starting")
 
-        if (status == ServiceStatus.Connected) {
-            Log.w(TAG, "VPN already connected")
-            return
-        }
-
         try {
             mutex.withLock {
+                if (status == ServiceStatus.Connected) {
+                    Log.w(TAG, "VPN already connected")
+                    return
+                }
                 startProxy()
                 startTun2Socks()
+                // Publish Connected while still holding the lock so a queued
+                // second START observes it instead of racing past the check.
+                updateStatus(ServiceStatus.Connected)
             }
-            updateStatus(ServiceStatus.Connected)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             Log.e(TAG, "Failed to start VPN", error)
-            stop()
             updateStatus(ServiceStatus.Failed)
+            stop()
         }
     }
 
@@ -134,7 +137,11 @@ class ByeDpiVpnService : LifecycleVpnService() {
             }
         }
 
-        updateStatus(ServiceStatus.Disconnected)
+        // Don't overwrite a FAILED terminal state with STOPPED: the failure
+        // path sets the status before calling stop().
+        if (status != ServiceStatus.Failed) {
+            updateStatus(ServiceStatus.Disconnected)
+        }
         stopSelf()
     }
 
@@ -156,8 +163,8 @@ class ByeDpiVpnService : LifecycleVpnService() {
                 Log.e(TAG, "Native proxy failed during startup", error)
                 withContext(Dispatchers.Main) {
                     lifecycleScope.launch {
-                        stop()
                         updateStatus(ServiceStatus.Failed)
+                        stop()
                     }
                 }
                 return@launch
@@ -167,8 +174,8 @@ class ByeDpiVpnService : LifecycleVpnService() {
                 if (code != 0) {
                     Log.e(TAG, "Proxy stopped with code $code")
                     lifecycleScope.launch {
-                        stop()
                         updateStatus(ServiceStatus.Failed)
+                        stop()
                     }
                 } else {
                     if (!stopping) {
@@ -220,7 +227,12 @@ class ByeDpiVpnService : LifecycleVpnService() {
         }
 
         val sharedPreferences = getPreferences()
-        val port = sharedPreferences.getString("byedpi_proxy_port", null)?.toInt() ?: 1080
+        // The SOCKS port must match the one the ciadpi process actually binds:
+        // in command-line mode it comes from the user's -p/--port argument.
+        val port = getByeDpiPreferences().let { prefs ->
+            if (prefs is ByeDpiProxyCmdPreferences) extractCmdPort(prefs.args)
+            else sharedPreferences.getString("byedpi_proxy_port", null)?.toIntOrNull() ?: 1080
+        }
         val dns = sharedPreferences.getStringNotNull("dns_ip", "1.1.1.1")
         val ipv6 = sharedPreferences.getBoolean("ipv6_enable", true)
 
@@ -243,6 +255,7 @@ class ByeDpiVpnService : LifecycleVpnService() {
             Log.e(TAG, "Failed to create config file", e)
             throw e
         }
+        configFile = configPath
 
         val fd = createBuilder(dns, ipv6).establish()
             ?: throw IllegalStateException("VPN connection failed")
@@ -269,7 +282,8 @@ class ByeDpiVpnService : LifecycleVpnService() {
             .onFailure { Log.e(TAG, "Failed to stop Tun2Socks", it) }
 
         try {
-            File(cacheDir, "config.tmp").delete()
+            configFile?.delete()
+            configFile = null
         } catch (e: SecurityException) {
             Log.e(TAG, "Failed to delete config file", e)
         }
@@ -282,6 +296,23 @@ class ByeDpiVpnService : LifecycleVpnService() {
 
     private fun getByeDpiPreferences(): ByeDpiProxyPreferences =
         ByeDpiProxyPreferences.fromSharedPreferences(getPreferences())
+
+    private fun extractCmdPort(args: Array<String>): Int? {
+        var port: Int? = null
+        var i = 0
+        while (i < args.size) {
+            val arg = args[i]
+            val value = when {
+                arg == "-p" || arg == "--port" -> args.getOrNull(i + 1)
+                arg.startsWith("--port=") -> arg.substringAfter('=')
+                arg.startsWith("-p") && arg.length > 2 -> arg.substring(2)
+                else -> null
+            }
+            value?.toIntOrNull()?.let { port = it }
+            i++
+        }
+        return port
+    }
 
     private fun updateStatus(newStatus: ServiceStatus) {
         Log.d(TAG, "VPN status changed from $status to $newStatus")
