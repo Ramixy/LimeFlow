@@ -126,6 +126,8 @@ class ZapretEngineService : LifecycleService() {
         _statusText.value = getString(R.string.zapret_preparing)
 
         try {
+            // Recover our own queue and process after an earlier service crash.
+            cleanupEngine()
             withContext(Dispatchers.IO) {
                 require(ZapretStrategies.list().any { it.id == strategyId }) { "Неизвестная стратегия" }
                 ZapretStrategies.extractDataFiles(applicationContext)
@@ -190,7 +192,7 @@ class ZapretEngineService : LifecycleService() {
                     append("$tool -t mangle -X LIMEFLOW 2>/dev/null\n")
                 }
                 append("pidfile=").append(shellQuote(File(filesDir, "zapret/nfqws.pid").absolutePath)).append("\n")
-                append("if [ -f \"\$pidfile\" ]; then kill \"\$(cat \"\$pidfile\")\" 2>/dev/null; rm -f \"\$pidfile\"; fi\n")
+                append("if [ -f \"\$pidfile\" ]; then pid=\$(cat \"\$pidfile\"); case \"\$pid\" in ''|*[!0-9]*) ;; *) if grep -aq libnfqws.so \"/proc/\$pid/cmdline\" 2>/dev/null; then kill \"\$pid\" 2>/dev/null; fi ;; esac; rm -f \"\$pidfile\"; fi\n")
             }
             val script = File(filesDir, "zapret/cleanup.sh")
             script.writeText(cleanup)

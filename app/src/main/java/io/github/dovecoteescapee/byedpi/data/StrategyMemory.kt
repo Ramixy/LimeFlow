@@ -57,8 +57,16 @@ object StrategyMemory {
 
     fun testNetwork(context: Context): TestNetwork {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val caps = manager?.let { connection ->
+        val active = manager?.let { connection ->
             connection.activeNetwork?.let(connection::getNetworkCapabilities)
+        }
+        val caps = if (active?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
+            active?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) active
+        else manager?.let { connection ->
+            connection.allNetworks.mapNotNull(connection::getNetworkCapabilities).firstOrNull {
+                it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    it.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+            }
         }
         if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
             return TestNetwork("wifi", "Wi-Fi")
@@ -81,8 +89,8 @@ object StrategyMemory {
         return when {
             name.contains("мегафон", true) || name.contains("megafon", true) -> "МегаФон"
             name.contains("билайн", true) || name.contains("beeline", true) -> "Билайн"
-            name.contains("мтс", true) || name.equals("mts", true) -> "МТС"
-            name.contains("tele2", true) || name.equals("t2", true) -> "T2"
+            name.contains("мтс", true) || name.startsWith("mts", true) -> "МТС"
+            name.contains("tele2", true) || name.startsWith("t2", true) -> "T2"
             name.contains("yota", true) || name.contains("йота", true) -> "Yota"
             name.isBlank() -> "оператор не определён"
             else -> name
@@ -105,13 +113,7 @@ object StrategyMemory {
                 if (key.isBlank() || label.isBlank()) null else TestNetwork(key, label)
             }.sortedBy { it.label }
 
-    fun onWifi(context: Context): Boolean {
-        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return true
-        val network = manager.activeNetwork ?: return true
-        val caps = manager.getNetworkCapabilities(network) ?: return true
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-    }
+    fun onWifi(context: Context): Boolean = testNetwork(context).key == "wifi"
 
     fun scoreFor(context: Context, preferences: SharedPreferences, profileId: String): StrategyScore? {
         val raw = preferences.getString(resultsKey(testNetwork(context).key), null) ?: return null

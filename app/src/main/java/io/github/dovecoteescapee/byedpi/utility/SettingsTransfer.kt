@@ -19,6 +19,7 @@ object SettingsTransfer {
     }
 
     suspend fun import(context: Context, raw: String) {
+        require(raw.length <= 2_000_000) { "Settings file is too large" }
         val payload = JSONObject(raw)
         require(payload.optString("format") == FORMAT) { "Unsupported settings file" }
         require(payload.optInt("version") in 1..VERSION) { "Unsupported settings version" }

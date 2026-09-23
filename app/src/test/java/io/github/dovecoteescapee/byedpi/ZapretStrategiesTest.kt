@@ -21,7 +21,7 @@ class ZapretStrategiesTest {
             call service.bat check_updates
             start "zapret: general" /min "%BIN%winws.exe" --wf-tcp=80,443,%GameFilterTCP% ^
             --filter-tcp=443 --hostlist="%LISTS%list-google.txt" --new ^
-            --filter-tcp=%GameFilterTCP% --dpi-desync=fake --new ^
+            --filter-tcp=%GameFilterTCP% --ipset="%LISTS%ipset-all.txt" --dpi-desync=fake --new ^
             --filter-udp=%GameFilterUDP% --dpi-desync=fake
         """.trimIndent()
         val disabled = ZapretStrategies.parseConfig(config, "/bin", "/lists", null, null)
@@ -31,5 +31,6 @@ class ZapretStrategiesTest {
         val enabled = ZapretStrategies.parseConfig(config, "/bin", "/lists", "1024-1934,1936-65535", "1024-65535")
         assertTrue(enabled.contains("--filter-tcp=1024-1934,1936-65535"))
         assertTrue(enabled.contains("--filter-udp=1024-65535"))
+        assertFalse(enabled.any { it.contains("ipset-all.txt") })
     }
 }
