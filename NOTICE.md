@@ -54,8 +54,9 @@ files are preserved next to their source code under
 
 ## Bundled strategy data
 
-The "Zapret Engine" mode ships host lists, fake packet binaries and strategy
-configurations taken from **zapret-discord-youtube 1.10.0** (Flowseal):
+The "Zapret Engine" mode ships strategy configurations and fake packet binaries
+from **zapret-discord-youtube 1.10.0** (Flowseal). The bundled host lists were
+updated from **1.10.3**:
 https://github.com/Flowseal/zapret-discord-youtube
 
 ## Strategy research
