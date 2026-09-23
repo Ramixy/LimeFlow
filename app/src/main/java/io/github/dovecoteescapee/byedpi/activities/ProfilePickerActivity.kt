@@ -53,6 +53,9 @@ class ProfilePickerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityProfilePickerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.networkHistoryButton.text = getString(
+            R.string.network_results_button, StrategyMemory.networkLabel(this))
+        binding.networkHistoryButton.setOnClickListener { showNetworkHistory() }
 
         adapter = ProfileAdapter(
             profiles = FlowsealProfiles.catalog(getPreferences()),
@@ -139,6 +142,8 @@ class ProfilePickerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        binding.networkHistoryButton.text = getString(
+            R.string.network_results_button, StrategyMemory.networkLabel(this))
         if (::adapter.isInitialized) {
             adapter.replaceProfiles(FlowsealProfiles.catalog(getPreferences()))
             adapter.setPinned(StrategyMemory.pinned(getPreferences()))
@@ -321,7 +326,30 @@ class ProfilePickerActivity : AppCompatActivity() {
         adapter.showRanked(ranked)
         updateTopResults(ranked)
         showApplyBest(ranked)
-        binding.smartTestStatus.text = getString(R.string.smart_saved_results, ranked.size)
+        binding.smartTestStatus.text = getString(R.string.network_results_for,
+            StrategyMemory.networkLabel(this), ranked.size)
+    }
+
+    private fun showNetworkHistory() {
+        val current = StrategyMemory.testNetwork(this)
+        val networks = (StrategyMemory.testedNetworks(getPreferences()) + current)
+            .distinctBy { it.key }
+        val labels = networks.map { network ->
+            val count = StrategyTestRunner.loadSavedResults(this, network.key).size
+            getString(R.string.network_results_for, network.label, count)
+        }.toTypedArray()
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.network_results_title)
+            .setItems(labels) { _, which ->
+                val network = networks[which]
+                val saved = StrategyTestRunner.loadSavedResults(this, network.key)
+                    .sortedWith(profileResultComparator)
+                adapter.showRanked(saved)
+                updateTopResults(saved)
+                showApplyBest(saved)
+                binding.smartTestStatus.text = labels[which]
+            }
+            .show()
     }
 
     private fun updateTopResults(results: List<ProfileTestResult>) {

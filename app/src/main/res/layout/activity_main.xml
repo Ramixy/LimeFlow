@@ -165,8 +165,10 @@
                         android:focusable="true"
                         android:foreground="?attr/selectableItemBackground"
                         app:cardBackgroundColor="?attr/colorPrimary"
-                        app:cardCornerRadius="70dp"
-                        app:cardElevation="4dp"
+                        app:cardCornerRadius="42dp"
+                        app:cardElevation="10dp"
+                        app:strokeColor="?attr/colorOnPrimary"
+                        app:strokeWidth="2dp"
                         app:layout_constraintEnd_toEndOf="parent"
                         app:layout_constraintStart_toStartOf="parent"
                         app:layout_constraintTop_toTopOf="parent">
@@ -183,7 +185,7 @@
                             android:paddingBottom="22dp"
                             android:textAllCaps="false"
                             android:textColor="?attr/colorOnPrimary"
-                            android:textSize="14sp"
+                            android:textSize="15sp"
                             android:textStyle="bold"
                             app:backgroundTint="@android:color/transparent"
                             tools:text="@string/vpn_connect" />

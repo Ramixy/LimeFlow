@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity() {
                 ServiceManager.start(this, Mode.VPN)
             } else {
                 Toast.makeText(this, R.string.vpn_permission_denied, Toast.LENGTH_SHORT).show()
-                updateStatus()
+                updateStatus(terminal = true)
             }
         }
 
@@ -139,7 +139,7 @@ class MainActivity : AppCompatActivity() {
 
             when (val action = intent.action) {
                 STARTED_BROADCAST,
-                STOPPED_BROADCAST -> updateStatus()
+                STOPPED_BROADCAST -> updateStatus(terminal = true)
 
                 FAILED_BROADCAST -> {
                     Toast.makeText(
@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity() {
                         getString(R.string.failed_to_start, sender.name),
                         Toast.LENGTH_SHORT,
                     ).show()
-                    updateStatus()
+                    updateStatus(terminal = true)
                 }
 
                 else -> Log.w(TAG, "Unknown action: $action")
@@ -294,7 +294,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val profile = FlowsealProfiles.selected(getPreferences())
-        val score = StrategyMemory.scoreFor(getPreferences(), profile.id)
+        val score = StrategyMemory.scoreFor(this, getPreferences(), profile.id)
         binding.strategyButtonText.text = if (score != null) {
             getString(R.string.profile_summary_score, profile.name, score.label)
         } else {
@@ -330,7 +330,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun maybeOfferNetworkStrategy() {
         val preferences = getPreferences()
-        val type = if (StrategyMemory.onWifi(this)) "wifi" else "mobile"
+        val type = StrategyMemory.testNetwork(this).key
         val last = preferences.getString(StrategyMemory.NETWORK_HINT_KEY, null)
         if (last == null) {
             preferences.edit().putString(StrategyMemory.NETWORK_HINT_KEY, type).apply()
@@ -745,7 +745,7 @@ class MainActivity : AppCompatActivity() {
         ServiceManager.stop(this)
     }
 
-    private fun updateStatus() {
+    private fun updateStatus(terminal: Boolean = false) {
         val (status, mode) = appStatus
 
         Log.i(TAG, "Updating status: $status, $mode")
@@ -755,7 +755,13 @@ class MainActivity : AppCompatActivity() {
         val proxyPort = preferences.getStringNotNull("byedpi_proxy_port", "1080")
         binding.proxyAddress.text = getString(R.string.proxy_address, proxyIp, proxyPort)
         updateDashboardInfo()
-        finishStartingAnimation(status == AppStatus.Running)
+        if (status == AppStatus.Running || terminal) {
+            finishStartingAnimation(status == AppStatus.Running)
+        } else if (isStartingVisual) {
+            binding.statusText.setText(R.string.flow_connecting)
+            binding.statusButton.setText(R.string.flow_connecting)
+            return
+        }
 
         when (status) {
             AppStatus.Halted -> {
@@ -830,6 +836,8 @@ class MainActivity : AppCompatActivity() {
         if (isStartingVisual) return
         isStartingVisual = true
         binding.statusText.setText(R.string.flow_connecting)
+        binding.statusButton.setText(R.string.flow_connecting)
+        binding.statusButton.isEnabled = false
         binding.powerProgress.visibility = View.VISIBLE
         binding.powerProgress.animate().alpha(1f).setDuration(240).start()
 
@@ -859,6 +867,14 @@ class MainActivity : AppCompatActivity() {
             start()
         }
         startOrbitAnimation(2_300)
+        lifecycleScope.launch {
+            delay(30_000)
+            if (isStartingVisual && appStatus.first == AppStatus.Halted) {
+                finishStartingAnimation(false)
+                updateStatus()
+                Toast.makeText(this@MainActivity, R.string.flow_start_timeout, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun finishStartingAnimation(success: Boolean) {

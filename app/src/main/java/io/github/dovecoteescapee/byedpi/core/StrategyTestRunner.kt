@@ -9,6 +9,7 @@ import io.github.dovecoteescapee.byedpi.data.StrategyMemory
 import io.github.dovecoteescapee.byedpi.services.appStatus
 import io.github.dovecoteescapee.byedpi.data.AppStatus
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
+import io.github.dovecoteescapee.byedpi.utility.waitForProcessExit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,10 +37,10 @@ import java.net.Proxy
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
+import javax.net.ssl.HttpsURLConnection
 
 enum class ServiceCategory { YOUTUBE, DISCORD, NETWORK }
 
@@ -141,12 +142,18 @@ object StrategyTestRunner {
         if (appStatus.first == AppStatus.Running) return StartResult.ServiceRunning
 
         val appContext = context.applicationContext
+        val network = StrategyMemory.testNetwork(appContext)
         runJob = scope.launch {
             val console = StringBuilder()
-            val savedByProfile = loadSavedResults(appContext)
+            val savedByProfile = (if (clearResults) emptyList() else loadSavedResults(appContext, network.key))
                 .associateByTo(mutableMapOf()) { it.profile.id }
             try {
+                if (clearResults) appContext.getPreferences().edit()
+                    .remove(StrategyMemory.resultsKey(network.key)).apply()
                 profiles.forEachIndexed { index, profile ->
+                    check(StrategyMemory.testNetwork(appContext).key == network.key) {
+                        "Сеть изменилась во время проверки"
+                    }
                     console.clear()
                     console.append('[').append(index + 1).append('/').append(profiles.size)
                         .append("] ").append(profile.name).append('\n')
@@ -169,8 +176,11 @@ object StrategyTestRunner {
                             lastResult = null,
                         )
                     }
+                    check(StrategyMemory.testNetwork(appContext).key == network.key) {
+                        "Сеть изменилась во время проверки"
+                    }
                     savedByProfile[profile.id] = result
-                    persistResults(appContext, savedByProfile.values.sortedWith(profileResultComparator))
+                    persistResults(appContext, network, savedByProfile.values.sortedWith(profileResultComparator))
                     _state.value = State.Testing(
                         total = profiles.size,
                         done = index + 1,
@@ -325,6 +335,9 @@ object StrategyTestRunner {
                         socket.enabledProtocols = arrayOf(tlsVersion)
                     }
                     socket.startHandshake()
+                    if (!HttpsURLConnection.getDefaultHostnameVerifier().verify(host, socket.session)) {
+                        return@runCatching false
+                    }
                     val writer = OutputStreamWriter(socket.outputStream, Charsets.US_ASCII)
                     writer.write(
                         "GET ${target.path} HTTP/1.1\r\n" +
@@ -363,12 +376,12 @@ object StrategyTestRunner {
         val process = ProcessBuilder("/system/bin/ping", "-c", "1", "-W", "2", host)
             .redirectErrorStream(true)
             .start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }
-        if (!process.waitFor(3, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            process.waitFor(1, TimeUnit.SECONDS)
+        if (waitForProcessExit(process, 3_000) == null) {
+            process.destroy()
+            waitForProcessExit(process, 1_000)
             return@runCatching null
         }
+        val output = process.inputStream.bufferedReader().use { it.readText() }
         PING_TIME.find(output)?.groupValues?.get(1)?.toDoubleOrNull()
     }.getOrNull()
 
@@ -405,8 +418,8 @@ object StrategyTestRunner {
     private fun formatPing(value: Double?): String =
         value?.let { String.format(Locale.US, "%.0f ms", it) } ?: "timeout"
 
-    fun loadSavedResults(context: Context): List<ProfileTestResult> = runCatching {
-        val raw = context.getPreferences().getString(SAVED_RESULTS_KEY, null)
+    fun loadSavedResults(context: Context, networkKey: String = StrategyMemory.testNetwork(context).key): List<ProfileTestResult> = runCatching {
+        val raw = context.getPreferences().getString(StrategyMemory.resultsKey(networkKey), null)
             ?: return@runCatching emptyList()
         val payload = JSONObject(raw)
         if (payload.optInt("version") != RESULT_FORMAT_VERSION) {
@@ -453,7 +466,8 @@ object StrategyTestRunner {
         emptyList()
     }
 
-    private fun persistResults(context: Context, results: List<ProfileTestResult>) {
+    private fun persistResults(context: Context, network: io.github.dovecoteescapee.byedpi.data.TestNetwork,
+                               results: List<ProfileTestResult>) {
         val payload = JSONObject().apply {
             put("version", RESULT_FORMAT_VERSION)
             put("savedAt", System.currentTimeMillis())
@@ -483,7 +497,9 @@ object StrategyTestRunner {
                 }
             })
         }
-        context.getPreferences().edit().putString(SAVED_RESULTS_KEY, payload.toString()).apply()
+        val preferences = context.getPreferences()
+        preferences.edit().putString(StrategyMemory.resultsKey(network.key), payload.toString()).apply()
+        StrategyMemory.rememberTestNetwork(preferences, network)
     }
 
     private fun JSONObject.nullableBoolean(key: String): Boolean? =
@@ -492,7 +508,6 @@ object StrategyTestRunner {
     private fun JSONObject.nullableDouble(key: String): Double? =
         if (has(key) && !isNull(key)) getDouble(key) else null
 
-    private const val SAVED_RESULTS_KEY = StrategyMemory.RESULTS_KEY
 
     private val TARGETS = listOf(
         TestTarget(

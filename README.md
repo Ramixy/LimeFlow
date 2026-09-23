@@ -8,6 +8,12 @@
   Локальная обработка Android-трафика без root с интегрированным Telegram WebSocket Proxy.
 </p>
 
+## Что нового в 1.5.0
+
+- Zapret Engine использует списки Flowseal 1.10.3 и позволяет включать GameFilter отдельно для TCP и UDP. Диапазоны проверяются перед запуском; для исключения RTMP задайте TCP `1024-1934,1936-65535`.
+- Статус подключения теперь показывает «Подключение…» до ответа службы. Экран root-движка показывает запуск и остановку.
+- Проверка стратегий сохраняет результаты отдельно для Wi-Fi и текущего мобильного оператора. В каталоге стратегий нажмите «История тестов», чтобы посмотреть результаты по сетям. Проверки выполняются только через реально подключённую сеть.
+
 ## Что нового в 1.4.1
 
 - Раздельные APK под архитектуры: arm64-v8a, armeabi-v7a и universal — меньше размер, нативные библиотеки всегда совпадают с устройством.
@@ -33,9 +39,9 @@
 
 ## Скачать
 
-- [LimeFlow 1.4.1 Debug APK — arm64-v8a](releases/LimeFlow-1.4.1-debug-arm64-v8a.apk)
-- [LimeFlow 1.4.1 Debug APK — armeabi-v7a](releases/LimeFlow-1.4.1-debug-armeabi-v7a.apk)
-- [LimeFlow 1.4.1 Debug APK — universal](releases/LimeFlow-1.4.1-debug-universal.apk)
+- [LimeFlow 1.5.0 Debug APK — arm64-v8a](../../releases/download/v1.5.0/LimeFlow-1.5.0-debug-arm64-v8a.apk)
+- [LimeFlow 1.5.0 Debug APK — armeabi-v7a](../../releases/download/v1.5.0/LimeFlow-1.5.0-debug-armeabi-v7a.apk)
+- [LimeFlow 1.5.0 Debug APK — universal](../../releases/download/v1.5.0/LimeFlow-1.5.0-debug-universal.apk)
 - [Раздел Releases](../../releases)
 
 APK имеет пакет `app.alt11.mobile`, минимальная версия Android — 6.0.
