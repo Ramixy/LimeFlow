@@ -31,7 +31,7 @@ jobs:
       - name: Install native tools
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393" "cmake;3.22.1"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393" "cmake;3.22.1" || test "${PIPESTATUS[1]}" -eq 0
 
       - name: Make Gradle executable
         run: chmod +x gradlew
