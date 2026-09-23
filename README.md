@@ -39,9 +39,9 @@
 
 ## Скачать
 
-- [LimeFlow 1.5.0 Debug APK — arm64-v8a](../../releases/download/v1.5.0/LimeFlow-1.5.0-debug-arm64-v8a.apk)
-- [LimeFlow 1.5.0 Debug APK — armeabi-v7a](../../releases/download/v1.5.0/LimeFlow-1.5.0-debug-armeabi-v7a.apk)
-- [LimeFlow 1.5.0 Debug APK — universal](../../releases/download/v1.5.0/LimeFlow-1.5.0-debug-universal.apk)
+- [LimeFlow 1.5.0 — arm64-v8a](../../releases/download/v1.5.0/LimeFlow-1.5.0-arm64-v8a.apk)
+- [LimeFlow 1.5.0 — armeabi-v7a](../../releases/download/v1.5.0/LimeFlow-1.5.0-armeabi-v7a.apk)
+- [LimeFlow 1.5.0 — universal](../../releases/download/v1.5.0/LimeFlow-1.5.0-universal.apk)
 - [Раздел Releases](../../releases)
 
 APK имеет пакет `app.alt11.mobile`, минимальная версия Android — 6.0.

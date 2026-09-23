@@ -37,13 +37,20 @@ jobs:
         run: chmod +x gradlew
 
       - name: Test, lint and build
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug --stacktrace
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: LimeFlow-debug
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK for signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: LimeFlow-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: Upload lint report
