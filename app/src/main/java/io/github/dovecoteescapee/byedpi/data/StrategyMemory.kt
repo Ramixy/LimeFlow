@@ -97,7 +97,8 @@ object StrategyMemory {
         }
     }
 
-    fun resultsKey(networkKey: String): String = NETWORK_RESULTS_PREFIX + networkKey
+    fun resultsKey(networkKey: String): String =
+        if (networkKey == "legacy") RESULTS_KEY else NETWORK_RESULTS_PREFIX + networkKey
 
     fun rememberTestNetwork(preferences: SharedPreferences, network: TestNetwork) {
         val current = preferences.getStringSet(KNOWN_NETWORKS_KEY, emptySet()).orEmpty().toMutableSet()
@@ -106,7 +107,9 @@ object StrategyMemory {
     }
 
     fun testedNetworks(preferences: SharedPreferences): List<TestNetwork> =
-        preferences.getStringSet(KNOWN_NETWORKS_KEY, emptySet()).orEmpty()
+        (preferences.getStringSet(KNOWN_NETWORKS_KEY, emptySet()).orEmpty() +
+            if (preferences.contains(RESULTS_KEY)) setOf("legacy|Старая версия · сеть неизвестна")
+            else emptySet())
             .mapNotNull { value ->
                 val key = value.substringBefore('|')
                 val label = value.substringAfter('|', "")

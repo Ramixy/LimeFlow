@@ -11,5 +11,6 @@ class StrategyNetworkTest {
         assertEquals("МТС", StrategyMemory.normalizeOperator("MTS"))
         assertEquals("оператор не определён", StrategyMemory.normalizeOperator(""))
         assertEquals("strategy_test_results_v4_mobile_мтс", StrategyMemory.resultsKey("mobile_мтс"))
+        assertEquals(StrategyMemory.RESULTS_KEY, StrategyMemory.resultsKey("legacy"))
     }
 }

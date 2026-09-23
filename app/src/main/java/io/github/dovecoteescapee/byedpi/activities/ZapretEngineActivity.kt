@@ -30,6 +30,7 @@ class ZapretEngineActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityZapretEngineBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        wasRunning = ZapretEngineService.isRunning
 
         // `su` can hang for seconds while waiting for a user prompt; never
         // block the main thread on it.
