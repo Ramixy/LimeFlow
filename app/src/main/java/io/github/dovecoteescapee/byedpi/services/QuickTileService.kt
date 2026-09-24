@@ -67,8 +67,7 @@ class QuickTileService : TileService() {
                 addAction(STOPPED_BROADCAST)
                 addAction(FAILED_BROADCAST)
             },
-            // Status broadcasts come only from this app's services.
-            ContextCompat.RECEIVER_NOT_EXPORTED,
+            ContextCompat.RECEIVER_EXPORTED,
         )
     }
 

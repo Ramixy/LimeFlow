@@ -16,9 +16,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -53,9 +51,6 @@ class ProfilePickerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityProfilePickerBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        binding.networkHistoryButton.text = getString(
-            R.string.network_results_button, StrategyMemory.networkLabel(this))
-        binding.networkHistoryButton.setOnClickListener { showNetworkHistory() }
 
         adapter = ProfileAdapter(
             profiles = FlowsealProfiles.catalog(getPreferences()),
@@ -127,9 +122,7 @@ class ProfilePickerActivity : AppCompatActivity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                StrategyTestRunner.state.collect { state -> render(state) }
-            }
+            StrategyTestRunner.state.collect { state -> render(state) }
         }
         binding.root.alpha = 0f
         binding.root.translationY = 24f
@@ -142,8 +135,6 @@ class ProfilePickerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        binding.networkHistoryButton.text = getString(
-            R.string.network_results_button, StrategyMemory.networkLabel(this))
         if (::adapter.isInitialized) {
             adapter.replaceProfiles(FlowsealProfiles.catalog(getPreferences()))
             adapter.setPinned(StrategyMemory.pinned(getPreferences()))
@@ -326,30 +317,7 @@ class ProfilePickerActivity : AppCompatActivity() {
         adapter.showRanked(ranked)
         updateTopResults(ranked)
         showApplyBest(ranked)
-        binding.smartTestStatus.text = getString(R.string.network_results_for,
-            StrategyMemory.networkLabel(this), ranked.size)
-    }
-
-    private fun showNetworkHistory() {
-        val current = StrategyMemory.testNetwork(this)
-        val networks = (StrategyMemory.testedNetworks(getPreferences()) + current)
-            .distinctBy { it.key }
-        val labels = networks.map { network ->
-            val count = StrategyTestRunner.loadSavedResults(this, network.key).size
-            getString(R.string.network_results_for, network.label, count)
-        }.toTypedArray()
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.network_results_title)
-            .setItems(labels) { _, which ->
-                val network = networks[which]
-                val saved = StrategyTestRunner.loadSavedResults(this, network.key)
-                    .sortedWith(profileResultComparator)
-                adapter.showRanked(saved)
-                updateTopResults(saved)
-                showApplyBest(saved)
-                binding.smartTestStatus.text = labels[which]
-            }
-            .show()
+        binding.smartTestStatus.text = getString(R.string.smart_saved_results, ranked.size)
     }
 
     private fun updateTopResults(results: List<ProfileTestResult>) {

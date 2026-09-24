@@ -68,22 +68,21 @@ class ByeDpiProxyService : LifecycleService() {
     private suspend fun start() {
         Log.i(TAG, "Starting")
 
+        if (status == ServiceStatus.Connected) {
+            Log.w(TAG, "Proxy already connected")
+            return
+        }
+
         try {
             mutex.withLock {
-                if (status == ServiceStatus.Connected) {
-                    Log.w(TAG, "Proxy already connected")
-                    return
-                }
                 startProxy()
-                // Publish Connected while still holding the lock so a queued
-                // second START observes it instead of racing past the check.
-                updateStatus(ServiceStatus.Connected)
             }
+            updateStatus(ServiceStatus.Connected)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             Log.e(TAG, "Failed to start proxy", error)
-            updateStatus(ServiceStatus.Failed)
             stop()
+            updateStatus(ServiceStatus.Failed)
         }
     }
 
@@ -111,11 +110,7 @@ class ByeDpiProxyService : LifecycleService() {
                 Log.e(TAG, "Failed to stop proxy", error)
             }
         }
-        // Don't overwrite a FAILED terminal state with STOPPED: the failure
-        // path sets the status before calling stop().
-        if (status != ServiceStatus.Failed) {
-            updateStatus(ServiceStatus.Disconnected)
-        }
+        updateStatus(ServiceStatus.Disconnected)
         stopSelf()
     }
 
@@ -138,8 +133,8 @@ class ByeDpiProxyService : LifecycleService() {
                 Log.e(TAG, "Native proxy failed during startup", error)
                 withContext(Dispatchers.Main) {
                     lifecycleScope.launch {
-                        updateStatus(ServiceStatus.Failed)
                         stop()
+                        updateStatus(ServiceStatus.Failed)
                     }
                 }
                 return@launch
@@ -149,8 +144,8 @@ class ByeDpiProxyService : LifecycleService() {
                 if (code != 0) {
                     Log.e(TAG, "Proxy stopped with code $code")
                     lifecycleScope.launch {
-                        updateStatus(ServiceStatus.Failed)
                         stop()
+                        updateStatus(ServiceStatus.Failed)
                     }
                 } else {
                     lifecycleScope.launch { stop() }

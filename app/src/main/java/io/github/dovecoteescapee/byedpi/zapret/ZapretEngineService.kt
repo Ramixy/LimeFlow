@@ -14,7 +14,6 @@ import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.data.STOP_ACTION
 import io.github.dovecoteescapee.byedpi.utility.createConnectionNotification
 import io.github.dovecoteescapee.byedpi.utility.registerNotificationChannel
-import io.github.dovecoteescapee.byedpi.utility.waitForProcessExit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,25 +52,20 @@ class ZapretEngineService : LifecycleService() {
         }
 
         fun stop(context: Context) {
-            androidx.core.content.ContextCompat.startForegroundService(
-                context,
+            context.startService(
                 Intent(context, ZapretEngineService::class.java).apply { action = ACTION_STOP }
             )
         }
 
         fun hasRoot(): Boolean = runCatching {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-            // A pending su prompt or a wedged su binary must not hang the caller.
-            if (waitForProcessExit(process, 5_000) == null) {
-                process.destroy()
-                return false
-            }
             val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
             output.contains("uid=0")
         }.getOrDefault(false)
     }
 
-    enum class ZapretState { Halted, Starting, Running, Stopping, Failed }
+    enum class ZapretState { Halted, Running, Failed }
 
     override fun onCreate() {
         super.onCreate()
@@ -89,10 +83,7 @@ class ZapretEngineService : LifecycleService() {
             ACTION_START -> {
                 val strategy = intent.getStringExtra("strategy") ?: "general"
                 lifecycleScope.launch { startEngine(strategy) }
-                // A sticky restart delivers a null intent; re-running the engine
-                // without a start command would leave an uncontrolled foreground
-                // service doing nothing.
-                START_NOT_STICKY
+                START_STICKY
             }
 
             ACTION_STOP, STOP_ACTION -> {
@@ -118,22 +109,18 @@ class ZapretEngineService : LifecycleService() {
     }
 
     private suspend fun startEngine(strategyId: String) {
-        if (_state.value == ZapretState.Running || _state.value == ZapretState.Starting) {
+        if (_state.value == ZapretState.Running) {
             Log.w(TAG, "Zapret engine already running")
             return
         }
-        _state.value = ZapretState.Starting
+        _state.value = ZapretState.Halted
         _statusText.value = getString(R.string.zapret_preparing)
 
         try {
-            // Recover our own queue and process after an earlier service crash.
-            cleanupEngine()
             withContext(Dispatchers.IO) {
-                require(ZapretStrategies.list().any { it.id == strategyId }) { "Неизвестная стратегия" }
                 ZapretStrategies.extractDataFiles(applicationContext)
                 val args = ZapretStrategies.parseArgs(applicationContext, "zapret/configs/$strategyId.bat")
-                val script = buildScript(args, ZapretStrategies.gamePorts(applicationContext, true),
-                    ZapretStrategies.gamePorts(applicationContext, false))
+                val script = buildScript(args)
                 val scriptFile = File(filesDir, "zapret/run.sh")
                 scriptFile.parentFile?.mkdirs()
                 scriptFile.writeText(script)
@@ -142,57 +129,54 @@ class ZapretEngineService : LifecycleService() {
                 process = Runtime.getRuntime()
                     .exec(arrayOf("su", "-c", "sh ${scriptFile.absolutePath}"))
                 // Движок должен жить: если он умер сразу — ошибка конфигурации.
-                // Вывод нужно постоянно дренировать, иначе пайп (~64 КБ)
-                // переполнится и nfqws зависнет на записи.
-                val proc = process!!
-                Thread { proc.inputStream.use { input -> input.copyTo(DiscardOutputStream) } }.apply {
-                    isDaemon = true
-                    start()
-                }
-                Thread { proc.errorStream.use { input -> input.copyTo(DiscardOutputStream) } }.apply {
-                    isDaemon = true
-                    start()
-                }
-                val earlyExit = waitForProcessExit(proc, 1_500)
-                if (earlyExit != null) {
-                    throw IllegalStateException("nfqws exited: $earlyExit")
+                Thread.sleep(1_500)
+                if (!process!!.isAlive) {
+                    throw IllegalStateException("nfqws exited: " + process!!.inputStream.bufferedReader().readText().take(200))
                 }
                 _state.value = ZapretState.Running
                 _statusText.value = getString(R.string.zapret_running_status)
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val exitCode = proc.waitFor()
-                    if (_state.value == ZapretState.Running) {
-                        cleanupEngine()
-                        _state.value = ZapretState.Failed
-                        _statusText.value = getString(R.string.zapret_exited, exitCode)
-                        stopSelf()
-                    }
-                }
             }
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to start zapret engine", error)
-            // A failed start must roll back: iptables rules from the script may
-            // already be installed while the queue is dead.
-            cleanupEngine()
             _state.value = ZapretState.Failed
-            _statusText.value = getString(R.string.zapret_failed)
+            _statusText.value = error.message ?: getString(R.string.zapret_failed)
             stopSelf()
         }
     }
 
-    private suspend fun cleanupEngine() {
+    private fun buildScript(args: List<String>): String {
+        val binary = applicationInfo.nativeLibraryDir + "/libnfqws.so"
+        val portsTcp = "80,443,2053,2083,2087,2096,8443"
+        val portsUdp = "443,19294:19344,50000:50100"
+        val nfqArgs = args.joinToString(" ") { arg ->
+            if (' ' in arg) "'$arg'" else arg
+        }
+        return buildString {
+            append("#!/system/bin/sh\n")
+            for (tool in listOf("iptables", "ip6tables")) {
+                append("$tool -t mangle -N LIMEFLOW 2>/dev/null\n")
+                append("$tool -t mangle -F LIMEFLOW 2>/dev/null\n")
+                append("$tool -t mangle -A LIMEFLOW -p tcp -m multiport --dports $portsTcp")
+                append(" -j NFQUEUE --queue-num $QUEUE_NUM --queue-bypass 2>/dev/null\n")
+                append("$tool -t mangle -A LIMEFLOW -p udp -m multiport --dports $portsUdp")
+                append(" -j NFQUEUE --queue-num $QUEUE_NUM --queue-bypass 2>/dev/null\n")
+                append("$tool -t mangle -C OUTPUT -j LIMEFLOW 2>/dev/null ||")
+                append(" $tool -t mangle -I OUTPUT 1 -j LIMEFLOW 2>/dev/null\n")
+            }
+            append("exec '$binary' --qnum=$QUEUE_NUM $nfqArgs\n")
+        }
+    }
+
+    private suspend fun stopEngine() {
         withContext(Dispatchers.IO) {
             runCatching { process?.destroy() }
             process = null
             val cleanup = buildString {
                 for (tool in listOf("iptables", "ip6tables")) {
-                    // -D removes one occurrence per call; delete any duplicates.
-                    append("for i in 1 2 3 4; do $tool -t mangle -D OUTPUT -j LIMEFLOW 2>/dev/null; done\n")
-                    append("$tool -t mangle -F LIMEFLOW 2>/dev/null\n")
+                    append("$tool -t mangle -D OUTPUT -j LIMEFLOW 2>/dev/null\n")
                     append("$tool -t mangle -X LIMEFLOW 2>/dev/null\n")
                 }
-                append("pidfile=").append(shellQuote(File(filesDir, "zapret/nfqws.pid").absolutePath)).append("\n")
-                append("if [ -f \"\$pidfile\" ]; then pid=\$(cat \"\$pidfile\"); case \"\$pid\" in ''|*[!0-9]*) ;; *) if grep -aq libnfqws.so \"/proc/\$pid/cmdline\" 2>/dev/null; then kill \"\$pid\" 2>/dev/null; fi ;; esac; rm -f \"\$pidfile\"; fi\n")
+                append("pkill -f libnfqws.so 2>/dev/null\n")
             }
             val script = File(filesDir, "zapret/cleanup.sh")
             script.writeText(cleanup)
@@ -200,51 +184,9 @@ class ZapretEngineService : LifecycleService() {
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "sh ${script.absolutePath}"))
                 p.waitFor()
             }
+            _state.value = ZapretState.Halted
+            _statusText.value = getString(R.string.zapret_stopped_status)
         }
-    }
-
-    private fun buildScript(args: List<String>, gameTcp: String?, gameUdp: String?): String {
-        val binary = applicationInfo.nativeLibraryDir + "/libnfqws.so"
-        val portsTcp = "80,443,2053,2083,2087,2096,8443"
-        val portsUdp = "443,19294:19344,50000:50100"
-        val nfqArgs = args.joinToString(" ") { shellQuote(it) }
-        return buildString {
-            append("#!/system/bin/sh\n")
-            for (tool in listOf("iptables", "ip6tables")) {
-                val required = if (tool == "iptables") " || exit 70" else ""
-                append("$tool -t mangle -N LIMEFLOW 2>/dev/null\n")
-                append("$tool -t mangle -F LIMEFLOW 2>/dev/null$required\n")
-                append("$tool -t mangle -A LIMEFLOW -p tcp -m multiport --dports $portsTcp")
-                append(" -j NFQUEUE --queue-num $QUEUE_NUM --queue-bypass 2>/dev/null$required\n")
-                append("$tool -t mangle -A LIMEFLOW -p udp -m multiport --dports $portsUdp")
-                append(" -j NFQUEUE --queue-num $QUEUE_NUM --queue-bypass 2>/dev/null$required\n")
-                for ((protocol, ports) in listOf("tcp" to gameTcp, "udp" to gameUdp)) {
-                    ports?.split(',')?.forEach { range ->
-                        append("$tool -t mangle -A LIMEFLOW -p $protocol --dport ")
-                        append(range.replace('-', ':'))
-                        append(" -j NFQUEUE --queue-num $QUEUE_NUM --queue-bypass 2>/dev/null$required\n")
-                    }
-                }
-                append("$tool -t mangle -C OUTPUT -j LIMEFLOW 2>/dev/null ||")
-                append(" $tool -t mangle -I OUTPUT 1 -j LIMEFLOW 2>/dev/null$required\n")
-            }
-            append("echo \$\$ > ").append(shellQuote(File(filesDir, "zapret/nfqws.pid").absolutePath)).append("\n")
-            append("exec ").append(shellQuote(binary)).append(" --qnum=$QUEUE_NUM $nfqArgs\n")
-        }
-    }
-
-    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
-
-    private object DiscardOutputStream : java.io.OutputStream() {
-        override fun write(b: Int) = Unit
-        override fun write(b: ByteArray, off: Int, len: Int) = Unit
-    }
-
-    private suspend fun stopEngine() {
-        _state.value = ZapretState.Stopping
-        cleanupEngine()
-        _state.value = ZapretState.Halted
-        _statusText.value = getString(R.string.zapret_stopped_status)
         stopSelf()
     }
 

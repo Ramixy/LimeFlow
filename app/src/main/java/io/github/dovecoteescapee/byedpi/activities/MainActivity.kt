@@ -47,7 +47,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
@@ -84,7 +83,7 @@ class MainActivity : AppCompatActivity() {
                 ServiceManager.start(this, Mode.VPN)
             } else {
                 Toast.makeText(this, R.string.vpn_permission_denied, Toast.LENGTH_SHORT).show()
-                updateStatus(terminal = true)
+                updateStatus()
             }
         }
 
@@ -94,15 +93,11 @@ class MainActivity : AppCompatActivity() {
                 val logs = collectLogs()
 
                 if (logs == null) {
-                    Log.e(TAG, "Failed to collect logs")
-                    // Toast.show() must run on a Looper thread; this block is on IO.
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            R.string.logs_failed,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.logs_failed,
+                        Toast.LENGTH_SHORT
+                    ).show()
                 } else {
                     val uri = it.data?.data ?: run {
                         Log.e(TAG, "No data in result")
@@ -139,7 +134,7 @@ class MainActivity : AppCompatActivity() {
 
             when (val action = intent.action) {
                 STARTED_BROADCAST,
-                STOPPED_BROADCAST -> updateStatus(terminal = true)
+                STOPPED_BROADCAST -> updateStatus()
 
                 FAILED_BROADCAST -> {
                     Toast.makeText(
@@ -147,7 +142,7 @@ class MainActivity : AppCompatActivity() {
                         getString(R.string.failed_to_start, sender.name),
                         Toast.LENGTH_SHORT,
                     ).show()
-                    updateStatus(terminal = true)
+                    updateStatus()
                 }
 
                 else -> Log.w(TAG, "Unknown action: $action")
@@ -186,9 +181,6 @@ class MainActivity : AppCompatActivity() {
         receiverRegistered = true
 
         binding.statusButton.setOnClickListener {
-            // Ignore taps while a start/stop transition is in flight: a second
-            // START would tear down the proxy that is still connecting.
-            if (isStartingVisual) return@setOnClickListener
             val (status, _) = appStatus
             when (status) {
                 AppStatus.Halted -> {
@@ -256,12 +248,6 @@ class MainActivity : AppCompatActivity() {
         val preferences = getPreferences()
         if (preferences.getInt("limeflow_engine_version", 0) >= 12) return
 
-        // FlowsealProfiles.select() force-enables command-line mode; on an
-        // upgrade the user's explicit UI-vs-CMD choice must survive the
-        // re-apply. On a fresh install there is no choice yet, keep CMD.
-        val isUpgrade = preferences.contains("byedpi_enable_cmd_settings")
-        val userCmdSetting = preferences.getBoolean("byedpi_enable_cmd_settings", true)
-
         preferences.edit()
             .putString("byedpi_mode", "vpn")
             .putBoolean("byedpi_enable_cmd_settings", true)
@@ -269,11 +255,6 @@ class MainActivity : AppCompatActivity() {
             .putInt("limeflow_engine_version", 12)
             .apply()
         FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
-        if (isUpgrade) {
-            preferences.edit()
-                .putBoolean("byedpi_enable_cmd_settings", userCmdSetting)
-                .apply()
-        }
         BypassHosts.writeHostFile(this, preferences)
     }
 
@@ -294,7 +275,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val profile = FlowsealProfiles.selected(getPreferences())
-        val score = StrategyMemory.scoreFor(this, getPreferences(), profile.id)
+        val score = StrategyMemory.scoreFor(getPreferences(), profile.id)
         binding.strategyButtonText.text = if (score != null) {
             getString(R.string.profile_summary_score, profile.name, score.label)
         } else {
@@ -330,7 +311,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun maybeOfferNetworkStrategy() {
         val preferences = getPreferences()
-        val type = StrategyMemory.testNetwork(this).key
+        val type = if (StrategyMemory.onWifi(this)) "wifi" else "mobile"
         val last = preferences.getString(StrategyMemory.NETWORK_HINT_KEY, null)
         if (last == null) {
             preferences.edit().putString(StrategyMemory.NETWORK_HINT_KEY, type).apply()
@@ -448,70 +429,36 @@ class MainActivity : AppCompatActivity() {
             AppFilterActivity.FILTER_PACKAGES,
             emptySet(),
         ).orEmpty().toMutableSet()
-        val filterMode = preferences.getString(
-            AppFilterActivity.FILTER_MODE,
-            AppFilterActivity.MODE_ALL,
-        ) ?: AppFilterActivity.MODE_ALL
-        val telegramIncluded = when (filterMode) {
-            AppFilterActivity.MODE_EXCLUDE ->
-                AppFilterActivity.TELEGRAM_PACKAGES.none { it in packages }
-            AppFilterActivity.MODE_INCLUDE ->
+        val excludedNow =
+            preferences.getString(
+                AppFilterActivity.FILTER_MODE,
+                AppFilterActivity.MODE_ALL,
+            ) == AppFilterActivity.MODE_EXCLUDE &&
                 AppFilterActivity.TELEGRAM_PACKAGES.any { it in packages }
-            else -> true
-        }
 
-        // Toggle Telegram without discarding the semantics of the other
-        // filtered packages (an INCLUDE list must not become an EXCLUDE list).
-        if (telegramIncluded) {
-            if (filterMode == AppFilterActivity.MODE_INCLUDE) {
-                packages.removeAll(AppFilterActivity.TELEGRAM_PACKAGES)
-                preferences.edit()
-                    .putString(
-                        AppFilterActivity.FILTER_MODE,
-                        if (packages.isEmpty()) {
-                            AppFilterActivity.MODE_ALL
-                        } else {
-                            AppFilterActivity.MODE_INCLUDE
-                        },
-                    )
-                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
-                    .apply()
-            } else {
-                packages.addAll(AppFilterActivity.TELEGRAM_PACKAGES)
-                preferences.edit()
-                    .putString(AppFilterActivity.FILTER_MODE, AppFilterActivity.MODE_EXCLUDE)
-                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
-                    .apply()
-            }
+        if (excludedNow) {
+            packages.removeAll(AppFilterActivity.TELEGRAM_PACKAGES)
         } else {
-            if (filterMode == AppFilterActivity.MODE_INCLUDE) {
-                packages.addAll(AppFilterActivity.TELEGRAM_PACKAGES)
-                preferences.edit()
-                    .putString(AppFilterActivity.FILTER_MODE, AppFilterActivity.MODE_INCLUDE)
-                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
-                    .apply()
-            } else {
-                packages.removeAll(AppFilterActivity.TELEGRAM_PACKAGES)
-                preferences.edit()
-                    .putString(
-                        AppFilterActivity.FILTER_MODE,
-                        if (packages.isEmpty()) {
-                            AppFilterActivity.MODE_ALL
-                        } else {
-                            AppFilterActivity.MODE_EXCLUDE
-                        },
-                    )
-                    .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
-                    .apply()
-            }
+            packages.addAll(AppFilterActivity.TELEGRAM_PACKAGES)
         }
+        preferences.edit()
+            .putString(
+                AppFilterActivity.FILTER_MODE,
+                if (excludedNow && packages.isEmpty()) {
+                    AppFilterActivity.MODE_ALL
+                } else {
+                    AppFilterActivity.MODE_EXCLUDE
+                },
+            )
+            .putStringSet(AppFilterActivity.FILTER_PACKAGES, packages)
+            .apply()
         updateDashboardInfo()
         Toast.makeText(
             this,
-            if (telegramIncluded) {
-                R.string.flow_telegram_now_excluded
-            } else {
+            if (excludedNow) {
                 R.string.flow_telegram_now_included
+            } else {
+                R.string.flow_telegram_now_excluded
             },
             Toast.LENGTH_SHORT,
         ).show()
@@ -745,7 +692,7 @@ class MainActivity : AppCompatActivity() {
         ServiceManager.stop(this)
     }
 
-    private fun updateStatus(terminal: Boolean = false) {
+    private fun updateStatus() {
         val (status, mode) = appStatus
 
         Log.i(TAG, "Updating status: $status, $mode")
@@ -755,13 +702,7 @@ class MainActivity : AppCompatActivity() {
         val proxyPort = preferences.getStringNotNull("byedpi_proxy_port", "1080")
         binding.proxyAddress.text = getString(R.string.proxy_address, proxyIp, proxyPort)
         updateDashboardInfo()
-        if (status == AppStatus.Running || terminal) {
-            finishStartingAnimation(status == AppStatus.Running)
-        } else if (isStartingVisual) {
-            binding.statusText.setText(R.string.flow_connecting)
-            binding.statusButton.setText(R.string.flow_connecting)
-            return
-        }
+        finishStartingAnimation(status == AppStatus.Running)
 
         when (status) {
             AppStatus.Halted -> {
@@ -836,8 +777,6 @@ class MainActivity : AppCompatActivity() {
         if (isStartingVisual) return
         isStartingVisual = true
         binding.statusText.setText(R.string.flow_connecting)
-        binding.statusButton.setText(R.string.flow_connecting)
-        binding.statusButton.isEnabled = false
         binding.powerProgress.visibility = View.VISIBLE
         binding.powerProgress.animate().alpha(1f).setDuration(240).start()
 
@@ -867,14 +806,6 @@ class MainActivity : AppCompatActivity() {
             start()
         }
         startOrbitAnimation(2_300)
-        lifecycleScope.launch {
-            delay(30_000)
-            if (isStartingVisual && appStatus.first == AppStatus.Halted) {
-                finishStartingAnimation(false)
-                updateStatus()
-                Toast.makeText(this@MainActivity, R.string.flow_start_timeout, Toast.LENGTH_LONG).show()
-            }
-        }
     }
 
     private fun finishStartingAnimation(success: Boolean) {

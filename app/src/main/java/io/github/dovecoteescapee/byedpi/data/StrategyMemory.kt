@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.telephony.TelephonyManager
 import org.json.JSONObject
 
 data class StrategyScore(
@@ -16,15 +15,11 @@ data class StrategyScore(
     val label: String get() = "$protocolSuccess/$protocolTotal"
 }
 
-data class TestNetwork(val key: String, val label: String)
-
 object StrategyMemory {
     const val PINNED_KEY = "limeflow_pinned_profiles"
     const val WIFI_PROFILE_KEY = "limeflow_profile_wifi"
     const val MOBILE_PROFILE_KEY = "limeflow_profile_mobile"
     const val RESULTS_KEY = "strategy_test_results_v3"
-    private const val NETWORK_RESULTS_PREFIX = "strategy_test_results_v4_"
-    private const val KNOWN_NETWORKS_KEY = "strategy_test_networks_v4"
     const val BATTERY_PROMPTED_KEY = "limeflow_battery_prompted"
     const val NETWORK_HINT_KEY = "limeflow_network_hint_type"
     const val PROTOCOL_TEST_COUNT = 45
@@ -43,83 +38,27 @@ object StrategyMemory {
     }
 
     fun rememberForCurrentNetwork(context: Context, preferences: SharedPreferences, profileId: String) {
-        val key = "limeflow_profile_${testNetwork(context).key}"
+        val key = if (onWifi(context)) WIFI_PROFILE_KEY else MOBILE_PROFILE_KEY
         preferences.edit().putString(key, profileId).apply()
     }
 
     fun rememberedForCurrentNetwork(context: Context, preferences: SharedPreferences): String? {
-        val key = "limeflow_profile_${testNetwork(context).key}"
-        return preferences.getString(key, preferences.getString(
-            if (onWifi(context)) WIFI_PROFILE_KEY else MOBILE_PROFILE_KEY, null))
+        val key = if (onWifi(context)) WIFI_PROFILE_KEY else MOBILE_PROFILE_KEY
+        return preferences.getString(key, null)
     }
 
-    fun networkLabel(context: Context): String = testNetwork(context).label
+    fun networkLabel(context: Context): String = if (onWifi(context)) "Wi-Fi" else "LTE"
 
-    fun testNetwork(context: Context): TestNetwork {
+    fun onWifi(context: Context): Boolean {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val active = manager?.let { connection ->
-            connection.activeNetwork?.let(connection::getNetworkCapabilities)
-        }
-        val caps = if (active?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
-            active?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) active
-        else manager?.let { connection ->
-            connection.allNetworks.mapNotNull(connection::getNetworkCapabilities).firstOrNull {
-                it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                    it.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
-            }
-        }
-        if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
-            return TestNetwork("wifi", "Wi-Fi")
-        }
-        if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) {
-            val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-            val raw = runCatching { telephony?.networkOperatorName.orEmpty().ifBlank {
-                telephony?.simOperatorName.orEmpty()
-            } }.getOrDefault("")
-            val name = normalizeOperator(raw)
-            val key = name.lowercase(java.util.Locale.ROOT)
-                .replace(Regex("[^a-zа-яё0-9]+"), "_").trim('_').take(32)
-            return TestNetwork("mobile_${key.ifBlank { "unknown" }}", "Мобильная · $name")
-        }
-        return TestNetwork("other", "Другая сеть")
+            ?: return true
+        val network = manager.activeNetwork ?: return true
+        val caps = manager.getNetworkCapabilities(network) ?: return true
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
     }
 
-    fun normalizeOperator(raw: String): String {
-        val name = raw.trim().take(32)
-        return when {
-            name.contains("мегафон", true) || name.contains("megafon", true) -> "МегаФон"
-            name.contains("билайн", true) || name.contains("beeline", true) -> "Билайн"
-            name.contains("мтс", true) || name.startsWith("mts", true) -> "МТС"
-            name.contains("tele2", true) || name.startsWith("t2", true) -> "T2"
-            name.contains("yota", true) || name.contains("йота", true) -> "Yota"
-            name.isBlank() -> "оператор не определён"
-            else -> name
-        }
-    }
-
-    fun resultsKey(networkKey: String): String =
-        if (networkKey == "legacy") RESULTS_KEY else NETWORK_RESULTS_PREFIX + networkKey
-
-    fun rememberTestNetwork(preferences: SharedPreferences, network: TestNetwork) {
-        val current = preferences.getStringSet(KNOWN_NETWORKS_KEY, emptySet()).orEmpty().toMutableSet()
-        current.add("${network.key}|${network.label}")
-        preferences.edit().putStringSet(KNOWN_NETWORKS_KEY, current).apply()
-    }
-
-    fun testedNetworks(preferences: SharedPreferences): List<TestNetwork> =
-        (preferences.getStringSet(KNOWN_NETWORKS_KEY, emptySet()).orEmpty() +
-            if (preferences.contains(RESULTS_KEY)) setOf("legacy|Старая версия · сеть неизвестна")
-            else emptySet())
-            .mapNotNull { value ->
-                val key = value.substringBefore('|')
-                val label = value.substringAfter('|', "")
-                if (key.isBlank() || label.isBlank()) null else TestNetwork(key, label)
-            }.sortedBy { it.label }
-
-    fun onWifi(context: Context): Boolean = testNetwork(context).key == "wifi"
-
-    fun scoreFor(context: Context, preferences: SharedPreferences, profileId: String): StrategyScore? {
-        val raw = preferences.getString(resultsKey(testNetwork(context).key), null) ?: return null
+    fun scoreFor(preferences: SharedPreferences, profileId: String): StrategyScore? {
+        val raw = preferences.getString(RESULTS_KEY, null) ?: return null
         return runCatching {
             val payload = JSONObject(raw)
             val results = payload.optJSONArray("results") ?: return null
