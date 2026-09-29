@@ -99,6 +99,7 @@ object StrategyTestRunner {
 
     private const val PROXY_HOST = "127.0.0.1"
     private const val REQUEST_TIMEOUT_MS = 4_000
+    private const val PROBE_RETRY_DELAY_MS = 400L
     private const val PROXY_START_DELAY_MS = 500L
     private const val PROXY_STOP_TIMEOUT_MS = 2_000L
     private const val BETWEEN_STRATEGIES_DELAY_MS = 150L
@@ -229,6 +230,17 @@ object StrategyTestRunner {
             }
 
             val requestSlots = Semaphore(MAX_PARALLEL_REQUESTS)
+
+            /*
+             * The very first request through a freshly started engine pays a cold
+             * DNS resolve on the engine side, and its ClientHello is the one the
+             * DPI box is most likely to drop outright. Run one discarded warm-up
+             * probe so the scored probes measure the strategy, not engine start-up.
+             */
+            runCatching {
+                requestSlots.withPermit { probeHttps(WARMUP_TARGET, port, null) }
+            }
+
             val checks = TARGETS.map { target ->
                 async(Dispatchers.IO) {
                     checkTarget(target, port, requestSlots)
@@ -303,7 +315,18 @@ object StrategyTestRunner {
         )
     }
 
-    private fun probeHttps(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean =
+    private fun probeHttps(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean {
+        if (probeOnce(target, proxyPort, tlsVersion) == true) return true
+        /*
+         * DPI boxes often drop exactly the first ClientHello of a new flow pattern
+         * (fresh engine, fresh port) while letting the retry through. One retry
+         * keeps a working strategy from being scored as TLS connect errors.
+         */
+        Thread.sleep(PROBE_RETRY_DELAY_MS)
+        return probeOnce(target, proxyPort, tlsVersion) == true
+    }
+
+    private fun probeOnce(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean =
         runCatching {
             val host = target.host
             val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(PROXY_HOST, proxyPort))
@@ -493,6 +516,17 @@ object StrategyTestRunner {
         if (has(key) && !isNull(key)) getDouble(key) else null
 
     private const val SAVED_RESULTS_KEY = StrategyMemory.RESULTS_KEY
+
+    /*
+     * Warm-up probe target: Discord API is small, always up and exercises the
+     * same Cloudflare edge as every other scored Discord target.
+     */
+    private val WARMUP_TARGET = TestTarget(
+        "Warmup",
+        "discord.com",
+        ServiceCategory.DISCORD,
+        path = "/api/v9/gateway",
+    )
 
     private val TARGETS = listOf(
         TestTarget(

@@ -251,30 +251,35 @@ class MainActivity : AppCompatActivity() {
      * Re-applies the stored profile so an upgrade picks up rewritten strategy arguments:
      * byedpi_cmd_args is a flattened copy of them, not a reference. Bump the version
      * whenever the catalog's argument strings change.
+     *
+     * Runs fully on Dispatchers.IO: besides the SharedPreferences writes it also
+     * writes the host file, which is real disk I/O that must not touch onCreate.
      */
     private fun installEngineDefaults() {
-        val preferences = getPreferences()
-        if (preferences.getInt("limeflow_engine_version", 0) >= 12) return
+        lifecycleScope.launch(Dispatchers.IO) {
+            val preferences = getPreferences()
+            if (preferences.getInt("limeflow_engine_version", 0) >= 12) return@launch
 
-        // FlowsealProfiles.select() force-enables command-line mode; on an
-        // upgrade the user's explicit UI-vs-CMD choice must survive the
-        // re-apply. On a fresh install there is no choice yet, keep CMD.
-        val isUpgrade = preferences.contains("byedpi_enable_cmd_settings")
-        val userCmdSetting = preferences.getBoolean("byedpi_enable_cmd_settings", true)
+            // FlowsealProfiles.select() force-enables command-line mode; on an
+            // upgrade the user's explicit UI-vs-CMD choice must survive the
+            // re-apply. On a fresh install there is no choice yet, keep CMD.
+            val isUpgrade = preferences.contains("byedpi_enable_cmd_settings")
+            val userCmdSetting = preferences.getBoolean("byedpi_enable_cmd_settings", true)
 
-        preferences.edit()
-            .putString("byedpi_mode", "vpn")
-            .putBoolean("byedpi_enable_cmd_settings", true)
-            .putBoolean("ipv6_enable", true)
-            .putInt("limeflow_engine_version", 12)
-            .apply()
-        FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
-        if (isUpgrade) {
             preferences.edit()
-                .putBoolean("byedpi_enable_cmd_settings", userCmdSetting)
+                .putString("byedpi_mode", "vpn")
+                .putBoolean("byedpi_enable_cmd_settings", true)
+                .putBoolean("ipv6_enable", true)
+                .putInt("limeflow_engine_version", 12)
                 .apply()
+            FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
+            if (isUpgrade) {
+                preferences.edit()
+                    .putBoolean("byedpi_enable_cmd_settings", userCmdSetting)
+                    .apply()
+            }
+            BypassHosts.writeHostFile(applicationContext, preferences)
         }
-        BypassHosts.writeHostFile(this, preferences)
     }
 
     private fun ensureUnifiedAppearanceDefaults() {

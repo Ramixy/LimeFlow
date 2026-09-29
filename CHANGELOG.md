@@ -1,5 +1,12 @@
 # История изменений
 
+## 1.4.2
+
+- Discord voice: новая стратегия «VOICE» в Zapret Engine — усиленная UDP-группа для голоса Discord (fake x8, cutoff n4) с покрытием STUN/TURN (3478–3481) и any-protocol фейками.
+- Zapret Engine: в NFQUEUE добавлены порты STUN/TURN 3478:3481 — без них RTC мог висеть на «Connecting», даже когда голосовые порты обрабатывались.
+- Основной движок (byedpi): STUN/TURN (3478–3481) получил отдельную UDP-группу с той же подменой, что и голосовые порты.
+- Документировано: LimeFlow (VPN-режим) и сторонний VPN не могут работать одновременно на Android — активен только один VPN.
+
 ## 1.4.1
 
 - Раздельные APK по архитектурам (splits): arm64-v8a, armeabi-v7a и universal. x86/x86_64 не выпускаются — для них нет libtgwsproxy.so.
