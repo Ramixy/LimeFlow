@@ -8,7 +8,10 @@ import io.github.dovecoteescapee.byedpi.data.StrategyMemory
 import io.github.dovecoteescapee.byedpi.services.appStatus
 import io.github.dovecoteescapee.byedpi.data.AppStatus
 import io.github.dovecoteescapee.byedpi.utility.AppLog
+import io.github.dovecoteescapee.byedpi.utility.destroyForciblyCompat
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
+import io.github.dovecoteescapee.byedpi.utility.isAliveCompat
+import io.github.dovecoteescapee.byedpi.utility.waitForTimed
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -399,9 +402,9 @@ object StrategyTestRunner {
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader().use { it.readText() }
-        if (!process.waitFor(3, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            process.waitFor(1, TimeUnit.SECONDS)
+        if (!process.waitForTimed(3, TimeUnit.SECONDS)) {
+            process.destroyForciblyCompat()
+            process.waitForTimed(1, TimeUnit.SECONDS)
             return@runCatching null
         }
         PING_TIME.find(output)?.groupValues?.get(1)?.toDoubleOrNull()

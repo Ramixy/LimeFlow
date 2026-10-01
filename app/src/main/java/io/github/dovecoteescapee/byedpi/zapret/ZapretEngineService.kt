@@ -12,7 +12,10 @@ import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.data.STOP_ACTION
 import io.github.dovecoteescapee.byedpi.utility.AppLog
+import io.github.dovecoteescapee.byedpi.utility.destroyForciblyCompat
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
+import io.github.dovecoteescapee.byedpi.utility.isAliveCompat
+import io.github.dovecoteescapee.byedpi.utility.waitForTimed
 import io.github.dovecoteescapee.byedpi.utility.createConnectionNotification
 import io.github.dovecoteescapee.byedpi.utility.registerNotificationChannel
 import kotlinx.coroutines.Dispatchers
@@ -63,8 +66,8 @@ class ZapretEngineService : LifecycleService() {
         fun hasRoot(): Boolean = runCatching {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             // A pending su prompt or a wedged su binary must not hang the caller.
-            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                process.destroyForcibly()
+            if (!process.waitForTimed(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForciblyCompat()
                 return false
             }
             val output = process.inputStream.bufferedReader().use { it.readText() }
@@ -162,7 +165,7 @@ class ZapretEngineService : LifecycleService() {
                     start()
                 }
                 Thread.sleep(1_500)
-                if (!proc.isAlive) {
+                if (!proc.isAliveCompat()) {
                     throw IllegalStateException("nfqws exited: " + proc.exitValue())
                 }
                 _state.value = ZapretState.Running
