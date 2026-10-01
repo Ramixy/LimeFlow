@@ -256,7 +256,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun installEngineDefaults() {
         val preferences = getPreferences()
-        if (preferences.getInt("limeflow_engine_version", 0) >= 12) return
+        if (preferences.getInt("limeflow_engine_version", 0) >= 13) return
 
         // FlowsealProfiles.select() force-enables command-line mode; on an
         // upgrade the user's explicit UI-vs-CMD choice must survive the
@@ -268,7 +268,7 @@ class MainActivity : AppCompatActivity() {
             .putString("byedpi_mode", "vpn")
             .putBoolean("byedpi_enable_cmd_settings", true)
             .putBoolean("ipv6_enable", true)
-            .putInt("limeflow_engine_version", 12)
+            .putInt("limeflow_engine_version", 13)
             .apply()
         FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
         if (isUpgrade) {
