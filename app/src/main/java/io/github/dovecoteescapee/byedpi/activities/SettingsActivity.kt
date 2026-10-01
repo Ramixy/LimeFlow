@@ -20,6 +20,7 @@ import io.github.dovecoteescapee.byedpi.databinding.ActivitySettingsBinding
 import io.github.dovecoteescapee.byedpi.fragments.ByeDpiCommandLineSettingsFragment
 import io.github.dovecoteescapee.byedpi.fragments.ByeDpiUISettingsFragment
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
+import io.github.dovecoteescapee.byedpi.utility.AppLog
 import io.github.dovecoteescapee.byedpi.utility.applyLimeFlowPalette
 import io.github.dovecoteescapee.byedpi.utility.SettingsTransfer
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +106,7 @@ class SettingsActivity : AppCompatActivity() {
         configureNavigation()
         configureTransfer()
         configureReset()
+        configureDeveloper()
         animateEntry()
     }
 
@@ -206,6 +208,22 @@ class SettingsActivity : AppCompatActivity() {
                     recreate()
                 }
                 .show()
+        }
+    }
+
+    private fun configureDeveloper() {
+        val preferences = getPreferences()
+        val devMode = preferences.getBoolean("developer_mode", false)
+        binding.developerModeSwitch.isChecked = devMode
+        AppLog.verbose = devMode
+        binding.logsCard.visibility = if (devMode) View.VISIBLE else View.GONE
+        binding.developerModeSwitch.setOnCheckedChangeListener { _, checked ->
+            preferences.edit().putBoolean("developer_mode", checked).apply()
+            AppLog.verbose = checked
+            binding.logsCard.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        binding.logsCard.setOnClickListener {
+            startActivity(Intent(this, LogsActivity::class.java))
         }
     }
 

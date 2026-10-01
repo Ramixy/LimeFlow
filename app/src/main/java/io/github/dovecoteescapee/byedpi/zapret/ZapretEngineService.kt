@@ -6,12 +6,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.data.STOP_ACTION
+import io.github.dovecoteescapee.byedpi.utility.AppLog
+import io.github.dovecoteescapee.byedpi.utility.getPreferences
 import io.github.dovecoteescapee.byedpi.utility.createConnectionNotification
 import io.github.dovecoteescapee.byedpi.utility.registerNotificationChannel
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,7 @@ class ZapretEngineService : LifecycleService() {
         private const val FOREGROUND_SERVICE_ID: Int = 3
         private const val NOTIFICATION_CHANNEL_ID = "LimeFlowZapret"
         private const val QUEUE_NUM = 537
+        private const val NFQWS_TAG = "nfqws"
         private const val ACTION_START = "io.github.dovecoteescapee.byedpi.zapret.START"
         private const val ACTION_STOP = "io.github.dovecoteescapee.byedpi.zapret.STOP"
 
@@ -74,6 +76,7 @@ class ZapretEngineService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.verbose = getPreferences().getBoolean("developer_mode", false)
         registerNotificationChannel(
             this,
             NOTIFICATION_CHANNEL_ID,
@@ -118,11 +121,12 @@ class ZapretEngineService : LifecycleService() {
 
     private suspend fun startEngine(strategyId: String) {
         if (_state.value == ZapretState.Running) {
-            Log.w(TAG, "Zapret engine already running")
+            AppLog.w(TAG, "Zapret engine already running")
             return
         }
         _state.value = ZapretState.Halted
         _statusText.value = getString(R.string.zapret_preparing)
+        AppLog.i(TAG, "Starting zapret strategy: $strategyId")
 
         try {
             withContext(Dispatchers.IO) {
@@ -138,13 +142,22 @@ class ZapretEngineService : LifecycleService() {
                     .exec(arrayOf("su", "-c", "sh ${scriptFile.absolutePath}"))
                 // Движок должен жить: если он умер сразу — ошибка конфигурации.
                 // Вывод нужно постоянно дренировать, иначе пайп (~64 КБ)
-                // переполнится и nfqws зависнет на записи.
+                // переполнится и nfqws зависнет на записи; заодно каждая строка
+                // попадает в журнал режима разработчика.
                 val proc = process!!
-                Thread { proc.inputStream.use { it.copyTo(java.io.ByteArrayOutputStream()) } }.apply {
+                Thread {
+                    proc.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { AppLog.i(NFQWS_TAG, it) }
+                    }
+                }.apply {
                     isDaemon = true
                     start()
                 }
-                Thread { proc.errorStream.use { it.copyTo(java.io.ByteArrayOutputStream()) } }.apply {
+                Thread {
+                    proc.errorStream.bufferedReader().useLines { lines ->
+                        lines.forEach { AppLog.w(NFQWS_TAG, it) }
+                    }
+                }.apply {
                     isDaemon = true
                     start()
                 }
@@ -154,9 +167,10 @@ class ZapretEngineService : LifecycleService() {
                 }
                 _state.value = ZapretState.Running
                 _statusText.value = getString(R.string.zapret_running_status)
+                AppLog.i(TAG, "Zapret engine running")
             }
         } catch (error: Throwable) {
-            Log.e(TAG, "Failed to start zapret engine", error)
+            AppLog.e(TAG, "Failed to start zapret engine", error)
             // A failed start must roll back: iptables rules from the script may
             // already be installed while the queue is dead.
             cleanupEngine()
@@ -184,6 +198,7 @@ class ZapretEngineService : LifecycleService() {
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "sh ${script.absolutePath}"))
                 p.waitFor()
             }
+            AppLog.i(TAG, "Zapret engine cleaned up")
         }
     }
 

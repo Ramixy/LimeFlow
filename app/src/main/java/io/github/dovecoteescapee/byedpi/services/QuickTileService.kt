@@ -9,7 +9,6 @@ import android.net.VpnService
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import android.util.Log
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
@@ -18,6 +17,7 @@ import androidx.core.service.quicksettings.TileServiceCompat
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.data.*
+import io.github.dovecoteescapee.byedpi.utility.AppLog
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
 import io.github.dovecoteescapee.byedpi.utility.mode
 
@@ -34,7 +34,7 @@ class QuickTileService : TileService() {
             val senderOrd = intent.getIntExtra(SENDER, -1)
             val sender = Sender.entries.getOrNull(senderOrd)
             if (sender == null) {
-                Log.w(TAG, "Received intent with unknown sender: $senderOrd")
+                AppLog.w(TAG, "Received intent with unknown sender: $senderOrd")
                 return
             }
 
@@ -51,7 +51,7 @@ class QuickTileService : TileService() {
                     updateStatus()
                 }
 
-                else -> Log.w(TAG, "Unknown action: $action")
+                else -> AppLog.w(TAG, "Unknown action: $action")
             }
         }
     }

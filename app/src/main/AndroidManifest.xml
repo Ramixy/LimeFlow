@@ -75,6 +75,10 @@
             android:name=".activities.ZapretEngineActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".activities.LogsActivity"
+            android:exported="false" />
+
         <service
             android:name=".zapret.ZapretEngineService"
             android:foregroundServiceType="specialUse"

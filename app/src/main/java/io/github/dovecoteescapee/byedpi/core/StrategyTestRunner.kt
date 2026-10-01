@@ -2,12 +2,12 @@ package io.github.dovecoteescapee.byedpi.core
 
 import android.content.Context
 import android.os.Build
-import android.util.Log
 import io.github.dovecoteescapee.byedpi.data.ClassicEngine
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import io.github.dovecoteescapee.byedpi.data.StrategyMemory
 import io.github.dovecoteescapee.byedpi.services.appStatus
 import io.github.dovecoteescapee.byedpi.data.AppStatus
+import io.github.dovecoteescapee.byedpi.utility.AppLog
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -172,6 +172,13 @@ object StrategyTestRunner {
                     }
                     savedByProfile[profile.id] = result
                     persistResults(appContext, savedByProfile.values.sortedWith(profileResultComparator))
+                    AppLog.i(
+                        TAG,
+                        "Strategy \"${profile.name}\" [${index + 1}/${profiles.size}]: " +
+                            "protocols ${result.protocolSuccess}, ping ${result.pingSuccess}, " +
+                            "youtube ${result.youtubeScore}%, discord ${result.discordScore}%, " +
+                            "avg ${result.averagePingMs?.let { "%.0f ms".format(Locale.US, it) } ?: "n/a"}",
+                    )
                     _state.value = State.Testing(
                         total = profiles.size,
                         done = index + 1,
@@ -182,12 +189,17 @@ object StrategyTestRunner {
                 }
 
                 val ranked = savedByProfile.values.sortedWith(profileResultComparator)
+                AppLog.i(
+                    TAG,
+                    "Strategy test finished: ${ranked.size} profiles ranked, " +
+                        "best: ${ranked.firstOrNull()?.profile?.name ?: "none"}",
+                )
                 _state.value = State.Finished(ranked.size)
             } catch (error: CancellationException) {
                 _state.value = State.Cancelled
                 throw error
             } catch (error: Throwable) {
-                Log.e(TAG, "Full strategy test failed", error)
+                AppLog.e(TAG, "Full strategy test failed", error)
                 _state.value = State.Failed
             }
         }
@@ -217,7 +229,7 @@ object StrategyTestRunner {
                 engine.startProxy(ByeDpiProxyCmdPreferences(args + arrayOf("-p", port.toString())))
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                Log.e(TAG, "Strategy ${profile.name} failed to start", error)
+                AppLog.e(TAG, "Strategy ${profile.name} failed to start", error)
             } finally {
                 engineExited.set(true)
             }
@@ -472,7 +484,7 @@ object StrategyTestRunner {
             }
         }
     }.getOrElse {
-        Log.w(TAG, "Saved strategy results are invalid", it)
+        AppLog.w(TAG, "Saved strategy results are invalid", it)
         emptyList()
     }
 

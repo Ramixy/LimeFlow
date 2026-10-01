@@ -18,7 +18,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
@@ -73,7 +72,7 @@ class MainActivity : AppCompatActivity() {
                     .inputStream.bufferedReader()
                     .use { it.readText() }
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to collect logs", e)
+                AppLog.e(TAG, "Failed to collect logs", e)
                 null
             }
     }
@@ -94,7 +93,7 @@ class MainActivity : AppCompatActivity() {
                 val logs = collectLogs()
 
                 if (logs == null) {
-                    Log.e(TAG, "Failed to collect logs")
+                    AppLog.e(TAG, "Failed to collect logs")
                     // Toast.show() must run on a Looper thread; this block is on IO.
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
@@ -105,17 +104,17 @@ class MainActivity : AppCompatActivity() {
                     }
                 } else {
                     val uri = it.data?.data ?: run {
-                        Log.e(TAG, "No data in result")
+                        AppLog.e(TAG, "No data in result")
                         return@launch
                     }
                     contentResolver.openOutputStream(uri)?.use {
                         try {
                             it.write(logs.toByteArray())
                         } catch (e: IOException) {
-                            Log.e(TAG, "Failed to save logs", e)
+                            AppLog.e(TAG, "Failed to save logs", e)
                         }
                     } ?: run {
-                        Log.e(TAG, "Failed to open output stream")
+                        AppLog.e(TAG, "Failed to open output stream")
                     }
                 }
             }
@@ -123,17 +122,17 @@ class MainActivity : AppCompatActivity() {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Log.d(TAG, "Received intent: ${intent?.action}")
+            AppLog.d(TAG, "Received intent: ${intent?.action}")
 
             if (intent == null) {
-                Log.w(TAG, "Received null intent")
+                AppLog.w(TAG, "Received null intent")
                 return
             }
 
             val senderOrd = intent.getIntExtra(SENDER, -1)
             val sender = Sender.entries.getOrNull(senderOrd)
             if (sender == null) {
-                Log.w(TAG, "Received intent with unknown sender: $senderOrd")
+                AppLog.w(TAG, "Received intent with unknown sender: $senderOrd")
                 return
             }
 
@@ -150,12 +149,13 @@ class MainActivity : AppCompatActivity() {
                     updateStatus()
                 }
 
-                else -> Log.w(TAG, "Unknown action: $action")
+                else -> AppLog.w(TAG, "Unknown action: $action")
             }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppLog.verbose = getPreferences().getBoolean("developer_mode", false)
         ensureUnifiedAppearanceDefaults()
         appliedAppearanceSignature = appearanceSignature()
         applyStoredTheme()
@@ -691,6 +691,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.menu_main, menu)
+        // Экран журнала — инструмент режима разработчика, в обычной работе не нужен.
+        menu?.findItem(R.id.action_logs)?.isVisible =
+            getPreferences().getBoolean("developer_mode", false)
         return true
     }
 
@@ -718,6 +721,11 @@ class MainActivity : AppCompatActivity() {
                     }
 
                 logsRegister.launch(intent)
+                true
+            }
+
+            R.id.action_logs -> {
+                startActivity(Intent(this, LogsActivity::class.java))
                 true
             }
 
@@ -753,7 +761,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateStatus() {
         val (status, mode) = appStatus
 
-        Log.i(TAG, "Updating status: $status, $mode")
+        AppLog.i(TAG, "Updating status: $status, $mode")
 
         val preferences = getPreferences()
         val proxyIp = preferences.getStringNotNull("byedpi_proxy_ip", "127.0.0.1")
