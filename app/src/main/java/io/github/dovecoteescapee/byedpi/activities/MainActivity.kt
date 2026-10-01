@@ -44,6 +44,7 @@ import com.amurcanov.tgwsproxy.SettingsStore
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     private var startingPulseAnimator: ValueAnimator? = null
     private var startingLogoAnimator: ObjectAnimator? = null
     private var isStartingVisual = false
+    private var startingWatchdog: Job? = null
     private var lastPowerState: Boolean? = null
 
     companion object {
@@ -251,35 +253,30 @@ class MainActivity : AppCompatActivity() {
      * Re-applies the stored profile so an upgrade picks up rewritten strategy arguments:
      * byedpi_cmd_args is a flattened copy of them, not a reference. Bump the version
      * whenever the catalog's argument strings change.
-     *
-     * Runs fully on Dispatchers.IO: besides the SharedPreferences writes it also
-     * writes the host file, which is real disk I/O that must not touch onCreate.
      */
     private fun installEngineDefaults() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val preferences = getPreferences()
-            if (preferences.getInt("limeflow_engine_version", 0) >= 12) return@launch
+        val preferences = getPreferences()
+        if (preferences.getInt("limeflow_engine_version", 0) >= 12) return
 
-            // FlowsealProfiles.select() force-enables command-line mode; on an
-            // upgrade the user's explicit UI-vs-CMD choice must survive the
-            // re-apply. On a fresh install there is no choice yet, keep CMD.
-            val isUpgrade = preferences.contains("byedpi_enable_cmd_settings")
-            val userCmdSetting = preferences.getBoolean("byedpi_enable_cmd_settings", true)
+        // FlowsealProfiles.select() force-enables command-line mode; on an
+        // upgrade the user's explicit UI-vs-CMD choice must survive the
+        // re-apply. On a fresh install there is no choice yet, keep CMD.
+        val isUpgrade = preferences.contains("byedpi_enable_cmd_settings")
+        val userCmdSetting = preferences.getBoolean("byedpi_enable_cmd_settings", true)
 
+        preferences.edit()
+            .putString("byedpi_mode", "vpn")
+            .putBoolean("byedpi_enable_cmd_settings", true)
+            .putBoolean("ipv6_enable", true)
+            .putInt("limeflow_engine_version", 12)
+            .apply()
+        FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
+        if (isUpgrade) {
             preferences.edit()
-                .putString("byedpi_mode", "vpn")
-                .putBoolean("byedpi_enable_cmd_settings", true)
-                .putBoolean("ipv6_enable", true)
-                .putInt("limeflow_engine_version", 12)
+                .putBoolean("byedpi_enable_cmd_settings", userCmdSetting)
                 .apply()
-            FlowsealProfiles.select(preferences, FlowsealProfiles.selected(preferences))
-            if (isUpgrade) {
-                preferences.edit()
-                    .putBoolean("byedpi_enable_cmd_settings", userCmdSetting)
-                    .apply()
-            }
-            BypassHosts.writeHostFile(applicationContext, preferences)
         }
+        BypassHosts.writeHostFile(this, preferences)
     }
 
     private fun ensureUnifiedAppearanceDefaults() {
@@ -872,11 +869,25 @@ class MainActivity : AppCompatActivity() {
             start()
         }
         startOrbitAnimation(2_300)
+
+        // Если ни один сервис не ответил статусом (движок умер до запуска
+        // переднего сервиса), кнопка осталась бы в «Подключении» навсегда
+        // и перестала бы реагировать — по таймауту синхронизируем с фактом.
+        startingWatchdog?.cancel()
+        startingWatchdog = lifecycleScope.launch {
+            delay(15_000)
+            if (isStartingVisual) {
+                AppLog.w(TAG, "No status broadcast within 15s, resyncing UI")
+                updateStatus()
+            }
+        }
     }
 
     private fun finishStartingAnimation(success: Boolean) {
         if (!isStartingVisual) return
         isStartingVisual = false
+        startingWatchdog?.cancel()
+        startingWatchdog = null
         startingPulseAnimator?.cancel()
         startingPulseAnimator = null
         startingLogoAnimator?.cancel()

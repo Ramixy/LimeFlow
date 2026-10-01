@@ -186,9 +186,7 @@ class FlowsealProfilesTest {
             val groups = shellSplit(profile.arguments).filter { it.startsWith("-A") }
             assertEquals(
                 "${profile.name} opens an unexpected option group: $groups",
-                // 1.4.2 adds the dedicated STUN/TURN voice group (3478-3481), so the cascade
-            // opens 7 -An groups: QUIC + 3 voice port groups + 3 TCP host groups.
-            listOf("-An", "-An", "-An", "-An", "-An", "-An", "-An", "-At,r,s"),
+                listOf("-An", "-An", "-An", "-An", "-An", "-An", "-At,r,s"),
                 groups,
             )
         }

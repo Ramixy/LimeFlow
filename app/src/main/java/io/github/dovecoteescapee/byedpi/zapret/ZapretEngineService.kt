@@ -208,11 +208,10 @@ class ZapretEngineService : LifecycleService() {
     private fun buildScript(args: List<String>): String {
         val binary = applicationInfo.nativeLibraryDir + "/libnfqws.so"
         val portsTcp = "80,443,2053,2083,2087,2096,8443"
-        val portsUdp = "443,3478:3481,19294:19344,50000:50100"
-        // Every argument is single-quoted for sh: config tokens may contain quotes
-        // or shell metacharacters, and one unbalanced character used to swallow
-        // the whole command line.
-        val nfqArgs = args.joinToString(" ") { arg -> ZapretStrategies.quoteForShell(arg) }
+        val portsUdp = "443,19294:19344,50000:50100"
+        val nfqArgs = args.joinToString(" ") { arg ->
+            if (' ' in arg) "'$arg'" else arg
+        }
         return buildString {
             append("#!/system/bin/sh\n")
             for (tool in listOf("iptables", "ip6tables")) {
@@ -225,9 +224,7 @@ class ZapretEngineService : LifecycleService() {
                 append("$tool -t mangle -C OUTPUT -j LIMEFLOW 2>/dev/null ||")
                 append(" $tool -t mangle -I OUTPUT 1 -j LIMEFLOW 2>/dev/null\n")
             }
-            append("exec ")
-            append(ZapretStrategies.quoteForShell(binary))
-            append(" --qnum=$QUEUE_NUM $nfqArgs\n")
+            append("exec '$binary' --qnum=$QUEUE_NUM $nfqArgs\n")
         }
     }
 

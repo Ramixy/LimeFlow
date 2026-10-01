@@ -71,8 +71,6 @@ object FlowsealProfiles {
     /*
      * QUIC on 443 plus Discord voice ranges. `-J`/`-G` are the junk train (Jc / Jmin-Jmax).
      * Voice stays 50000-50100: a 50000-65535 sweep stalled unrelated UDP and broke tests.
- * STUN/TURN (3478-3481) gets its own group: Discord RTC stalls at Connecting when
- * STUN is dropped, even while the voice ports themselves are faked.
      * UDP groups stay port-scoped: the SOCKS UDP hook does not read TLS SNI.
      * quicFakePayload/voiceFake override the decoys: without them the engine repeats
      * the client datagram (voice) or uses the built-in fake.
@@ -93,12 +91,10 @@ object FlowsealProfiles {
         val voiceFakeFlag = if (voiceFake.isBlank()) "" else "-l':$voiceFake' "
         val voice = if (hosts.hasDiscord) {
             "-Ku -V19294-19344 ${voiceFakeFlag}-a$voiceFakes -An " +
-                "-Ku -V50000-50100 ${voiceFakeFlag}-a$voiceFakes -An " +
-                "-Ku -V3478-3481 ${voiceFakeFlag}-a$voiceFakes -An "
+                "-Ku -V50000-50100 ${voiceFakeFlag}-a$voiceFakes -An "
         } else {
             "-Ku -V19294-19344 -a0 -An " +
-                "-Ku -V50000-50100 -a0 -An " +
-                "-Ku -V3478-3481 -a0 -An "
+                "-Ku -V50000-50100 -a0 -An "
         }
         return "-Ku -V443 -R1-8 -J$quicJunk -G$junkMin-$junkMax $quicFakePayload -a$quicCount -An " +
             voice
