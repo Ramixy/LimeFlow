@@ -30,6 +30,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        # Пакет "tools" удалён из SDK Manager и валит установку (дефолт action);
+        # platform-tools достаточно, остальное ставит следующий шаг.
+        with:
+          packages: platform-tools
 
       - name: Install native tools
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393" "cmake;3.22.1"
