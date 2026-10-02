@@ -11,9 +11,12 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.activities.MainActivity
-import io.github.dovecoteescapee.byedpi.data.STOP_ACTION
+import io.github.dovecoteescapee.byedpi.data.*
+import io.github.dovecoteescapee.byedpi.receiver.ScreenEventsController
+import io.github.dovecoteescapee.byedpi.services.setStatus
 import io.github.dovecoteescapee.byedpi.utility.createConnectionNotification
 import io.github.dovecoteescapee.byedpi.utility.registerNotificationChannel
+import io.github.dovecoteescapee.byedpi.widget.VpnWidgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,6 +82,12 @@ class ZapretEngineService : LifecycleService() {
             NOTIFICATION_CHANNEL_ID,
             R.string.zapret_channel_name,
         )
+        ScreenEventsController.register(this)
+    }
+
+    override fun onDestroy() {
+        ScreenEventsController.unregister(this)
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -154,6 +163,7 @@ class ZapretEngineService : LifecycleService() {
                 }
                 _state.value = ZapretState.Running
                 _statusText.value = getString(R.string.zapret_running_status)
+                publish(ZapretState.Running)
             }
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to start zapret engine", error)
@@ -162,8 +172,31 @@ class ZapretEngineService : LifecycleService() {
             cleanupEngine()
             _state.value = ZapretState.Failed
             _statusText.value = error.message ?: getString(R.string.zapret_failed)
+            publish(ZapretState.Failed)
             stopSelf()
         }
+    }
+
+    /*
+     * Shares the zapret state with the rest of the shell (status button, tile,
+     * widgets, ControlReceiver) through the same appStatus + broadcasts the
+     * byedpi services use.
+     */
+    private fun publish(state: ZapretState) {
+        setStatus(
+            if (state == ZapretState.Running) AppStatus.Running else AppStatus.Halted,
+            Mode.Zapret,
+        )
+        val action = when (state) {
+            ZapretState.Running -> STARTED_BROADCAST
+            ZapretState.Halted -> STOPPED_BROADCAST
+            ZapretState.Failed -> FAILED_BROADCAST
+        }
+        val intent = Intent(action)
+            .putExtra(SENDER, Sender.Zapret.ordinal)
+            .setPackage(applicationContext.packageName)
+        sendBroadcast(intent)
+        VpnWidgets.updateAll(this)
     }
 
     private suspend fun cleanupEngine() {
@@ -190,7 +223,7 @@ class ZapretEngineService : LifecycleService() {
     private fun buildScript(args: List<String>): String {
         val binary = applicationInfo.nativeLibraryDir + "/libnfqws.so"
         val portsTcp = "80,443,2053,2083,2087,2096,8443"
-        val portsUdp = "443,3478:3481,19294:19344,50000:50100"
+        val portsUdp = "443,19294:19344,50000:50100"
         // Every argument is single-quoted for sh: config tokens may contain quotes
         // or shell metacharacters, and one unbalanced character used to swallow
         // the whole command line.
@@ -217,6 +250,7 @@ class ZapretEngineService : LifecycleService() {
         cleanupEngine()
         _state.value = ZapretState.Halted
         _statusText.value = getString(R.string.zapret_stopped_status)
+        publish(ZapretState.Halted)
         stopSelf()
     }
 

@@ -31,7 +31,6 @@ object ZapretStrategies {
         Triple("general (ALT11)", "ALT11", "fake,multisplit seqovl=664 с max.ru-паттерном"),
         Triple("general (ALT12)", "ALT12", "fake,multisplit seqovl=664, ts-fooling"),
         Triple("general (EXP)", "EXP", "экспериментальный: fake,multisplit со stun2-паттерном"),
-        Triple("discord-voice", "VOICE", "голос Discord: fake UDP x8 на voice+STUN/TURN портах, cutoff n4, QUIC и media-TCP без изменений"),
         Triple("general (FAKE TLS AUTO)", "FAKE TLS AUTO", "fake,multidisorder split-pos=1,midsld, повторы 11"),
         Triple("general (FAKE TLS AUTO ALT)", "FAKE TLS AUTO ALT", "fake,fakedsplit с rnd,dupsid и google SNI"),
         Triple("general (FAKE TLS AUTO ALT2)", "FAKE TLS AUTO ALT2", "fake,multisplit seqovl=681 с badseq=10000000"),

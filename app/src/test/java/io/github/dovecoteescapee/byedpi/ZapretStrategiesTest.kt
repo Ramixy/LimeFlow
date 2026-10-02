@@ -90,15 +90,23 @@ class ZapretStrategiesTest {
     }
 
     @Test
-    fun `discord voice config keeps STUN TURN ports and fakes`() {
+    fun `catalog has no discord-voice strategy and no STUN capture ports`() {
+        // 1.4.2 shipped an experimental discord-voice preset plus STUN/TURN
+        // 3478-3481 capture ports; both broke Discord voice and were reverted
+        // in 1.4.3. The parser itself must still pass a STUN fake through
+        // when a config legitimately carries one: original Flowseal configs
+        // do that on the voice port ranges only.
+        val ids = ZapretStrategies.list().map { it.id }
+        assertFalse("discord-voice preset must stay removed", ids.contains("discord-voice"))
+        assertTrue("general preset must exist", ids.contains("general"))
+
         val bat = "start \"z\" /min \"%BIN%winws.exe\" --wf-udp=443 ^\n" +
-            "--filter-udp=19294-19344,50000-50100,3478-3481 --filter-l7=discord,stun,unknown --dpi-desync=fake --dpi-desync-any-protocol=1 --dpi-desync-fake-stun=\"%BIN%ACTIVE_DISCORD_UDP.bin\" --dpi-desync-repeats=8 --dpi-desync-cutoff=n4\n"
+            "--filter-udp=19294-19344,50000-50100 --filter-l7=discord,stun --dpi-desync=fake --dpi-desync-fake-stun=\"%BIN%ACTIVE_DISCORD_UDP.bin\" --dpi-desync-repeats=8 --dpi-desync-cutoff=n4\n"
         val args = ZapretStrategies.parseConfigText(bat, binDir = "/b", listsDir = "/l")
         val joined = args.joinToString(" ")
-        assertTrue(joined.contains("--filter-udp=19294-19344,50000-50100,3478-3481"))
-        assertTrue(joined.contains("--filter-l7=discord,stun,unknown"))
+        assertTrue(joined.contains("--filter-udp=19294-19344,50000-50100"))
         assertTrue(joined.contains("--dpi-desync-fake-stun=/b/ACTIVE_DISCORD_UDP.bin"))
-        assertTrue(joined.contains("--dpi-desync-cutoff=n4"))
+        assertFalse("STUN/TURN ports must stay out of engine configs", joined.contains("3478"))
         assertFalse(joined.contains("--wf-udp"))
     }
 

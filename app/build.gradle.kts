@@ -12,8 +12,8 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 30
-        versionName = "1.4.2"
+        versionCode = 31
+        versionName = "1.4.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -86,6 +86,9 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("com.takisoft.preferencex:preferencex:1.1.0")
     implementation("com.google.android.material:material:1.12.0")
+    // Единственная новая зависимость: генерация QR-кодов для шаринга стратегий
+    // (только core, без camera/camera2).
+    implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-service:2.8.4")
     testImplementation("junit:junit:4.13.2")
