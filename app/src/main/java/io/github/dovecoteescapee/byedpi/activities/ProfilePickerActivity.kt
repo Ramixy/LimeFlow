@@ -73,6 +73,7 @@ class ProfilePickerActivity : AppCompatActivity() {
             onDelete = { profile -> confirmDeleteCustom(profile) },
         )
         binding.profileList.layoutManager = LinearLayoutManager(this)
+        adapter.recyclerView = binding.profileList
         binding.profileList.adapter = adapter
         binding.youtubeFeaturedCard.setOnClickListener {
             if (StrategyTestRunner.isRunning) return@setOnClickListener
@@ -143,7 +144,37 @@ class ProfilePickerActivity : AppCompatActivity() {
             adapter.replaceProfiles(FlowsealProfiles.catalog(getPreferences()))
             adapter.setPinned(StrategyMemory.pinned(getPreferences()))
         }
+        restoreScrollPosition()
     }
+
+    override fun onPause() {
+        super.onPause()
+        saveScrollPosition()
+    }
+
+    /*
+     * Remember where the user stopped scrolling so reopening the screen
+     * (or returning from a background kill) restores the same spot instead
+     * of jumping back to the top of the catalog.
+     */
+    private fun saveScrollPosition() {
+        if (!::adapter.isInitialized) return
+        val lm = binding.profileList.layoutManager as? LinearLayoutManager ?: return
+        val pos = lm.findFirstVisibleItemPosition()
+        if (pos > 0) {
+            getPreferences().edit().putInt(SCROLL_POSITION_KEY, pos).apply()
+        }
+    }
+
+    private fun restoreScrollPosition() {
+        val pos = getPreferences().getInt(SCROLL_POSITION_KEY, 0)
+        if (pos > 0) {
+            binding.profileList.post {
+                (binding.profileList.layoutManager as? LinearLayoutManager)?.scrollToPosition(pos)
+            }
+        }
+    }
+
 
     private fun startTest(profiles: List<FlowsealProfile>, clearResults: Boolean) {
         when (StrategyTestRunner.start(applicationContext, profiles, clearResults)) {
@@ -404,6 +435,9 @@ class ProfilePickerActivity : AppCompatActivity() {
         private val onEdit: (FlowsealProfile) -> Unit,
         private val onDelete: (FlowsealProfile) -> Unit,
     ) : RecyclerView.Adapter<ProfileAdapter.Holder>() {
+
+        /** Set once the RecyclerView exists; used to preserve scroll position. */
+        var recyclerView: RecyclerView? = null
         private var catalog = profiles
         private var query = ""
         private var testing = false
@@ -456,10 +490,34 @@ class ProfilePickerActivity : AppCompatActivity() {
         }
 
         fun updateResult(result: ProfileTestResult) {
+            // Live update during the test: refresh the row in place WITHOUT
+            // re-sorting. Mid-test sorting used to yank items out from under
+            // the finger while scrolling. Ranking is applied once, on finish,
+            // by showRanked().
             source = source.map {
                 if (it.profile.id == result.profile.id) it.copy(result = result) else it
-            }.sortedWith(rowComparator)
-            rebuildVisible()
+            }
+            // Keep the relative order stable: only rows that had no result at
+            // all move up (a no-result row above a with-result row is stale).
+            source = source.sortedWith(compareByDescending<ProfileRow> { it.result != null })
+            preserveVisiblePosition { rebuildVisible() }
+        }
+
+        /**
+         * Runs [block] while remembering the first visible item, then restores
+         * it, so live updates never yank the list out from under the finger.
+         */
+        private fun preserveVisiblePosition(block: () -> Unit) {
+            val rv = recyclerView ?: return
+            val lm = rv.layoutManager as? LinearLayoutManager ?: run { block(); return }
+            val pos = lm.findFirstVisibleItemPosition()
+            val offset = (lm.findViewByPosition(pos)?.let { lm.getDecoratedTop(it) } ?: 0)
+            block()
+            if (pos in 0 until itemCount) {
+                rv.post {
+                    (rv.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(pos, offset)
+                }
+            }
         }
 
         fun showRanked(results: List<ProfileTestResult>) {
@@ -679,5 +737,6 @@ class ProfilePickerActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "ProfilePicker"
         private const val TOPS_EXPANDED_KEY = "strategy_tops_expanded"
+        private const val SCROLL_POSITION_KEY = "profile_picker_scroll_pos"
     }
 }

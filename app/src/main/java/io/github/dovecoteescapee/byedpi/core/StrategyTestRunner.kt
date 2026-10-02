@@ -366,7 +366,28 @@ object StrategyTestRunner {
                         if (header.isEmpty()) break
                     }
                     val bodyOk = target.minBytes == 0 || readAtLeast(reader, target.minBytes)
-                    statusCode in 200..499 && bodyOk
+                    /*
+                     * Verdict rules, tuned so a strategy only scores when real
+                     * traffic would work:
+                     *  - 2xx/3xx: origin reached, always success.
+                     *  - 400/404/405 on API/CDN hosts: origin alive and answering
+                     *    (these endpoints legitimately reject bare GETs), success.
+                     *  - 451/429/5xx (520, 503...): DPI block page or edge
+                     *    refusing us - FAIL. The old code counted every 4xx as
+                     *    success and reported ~100% YouTube while thumbnails
+                     *    never loaded.
+                     *  - 403: ambiguous. Only success when the target is a real
+                     *    content probe (minBytes > 0) and the body actually flows.
+                     */
+                    val statusOk = when (statusCode) {
+                        in 200..399 -> true
+                        400, 404, 405 -> true
+                        451, 429 -> false
+                        in 500..599 -> false
+                        403 -> target.minBytes > 0 && bodyOk
+                        else -> false
+                    }
+                    statusOk && (target.minBytes == 0 || bodyOk)
                 }
             }
         }.getOrDefault(false)
