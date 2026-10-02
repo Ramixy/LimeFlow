@@ -153,6 +153,7 @@ class ProxyService : Service() {
             try {
                 NativeProxy.setPoolSize(poolSize)
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
+                CfDomainCache.ensureFresh(cacheDir)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result != 0) {

@@ -84,9 +84,6 @@ pub static PROXY_SECRET: Lazy<RwLock<String>> =
 
 pub static CFPROXY_ENC: &[&str] = &[
     "virkgj.com",
-    "vmmzovy.com",
-    "mkuosckvso.com",
-    "zaewayzmplad.com",
     "twdmbzcm.com",
     "awzwsldi.com",
     "clngqrflngqin.com",
@@ -98,6 +95,14 @@ pub static CFPROXY_ENC: &[&str] = &[
     "ulihssf.com",
     "tmhqsdqmfpmk.com",
     "xwuwoqbm.com",
+    "orgcnunpj.com",
+    "zhkuldz.com",
+    "efabnxaowuzs.com",
+    "vmmzovy.com",
+    "mkuosckvso.com",
+    "zaewayzmplad.com",
+    "zypoljnslxa.com",
+    "zaftuzsftqdq.com",
 ];
 
 // DC default IPs
