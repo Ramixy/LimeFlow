@@ -118,7 +118,6 @@ class SettingsActivity : AppCompatActivity() {
         configureNavigation()
         configureTransfer()
         configureReset()
-        configureDeveloper()
         animateEntry()
     }
 

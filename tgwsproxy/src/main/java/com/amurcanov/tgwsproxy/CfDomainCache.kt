@@ -16,13 +16,13 @@ import java.util.concurrent.atomic.AtomicLong
  * which showed up as connection timeouts.
  *
  * This object seeds the cache with a known-good snapshot before the engine
- * starts and refreshes it from GitHub in the background between starts.
+ * starts and refreshes it from GitHub through two mirrors (raw + jsDelivr CDN)
+ * — synchronously when the cached copy is stale, so the current start already
+ * uses fresh domains, not only the next one.
  */
 object CfDomainCache {
 
     private const val FILE_NAME = "cfproxy-domains-cache.txt"
-    private const val DOMAINS_URL =
-        "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
 
     /**
      * Verbatim copy of .github/cfproxy-domains.txt on Flowseal/tg-ws-proxy
@@ -30,7 +30,7 @@ object CfDomainCache {
      * on /apiws). Encoded form, exactly as the engine's decoder expects.
      */
     private val FALLBACK_DOMAINS = listOf(
-        "virkgj.com",
+        "virqgj.com",
         "vmmzovy.com",
         "mkuosckvso.com",
         "zaewayzmplad.com",
@@ -52,16 +52,24 @@ object CfDomainCache {
         "zaftuzsftqdq.com",
     )
 
-    private const val MIN_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000L
-    private const val CONNECT_TIMEOUT_MS = 10_000
-    private const val READ_TIMEOUT_MS = 10_000
+    // raw.githubusercontent.com is routinely blocked on RU networks; the
+    // jsDelivr CDN mirrors the same file and is usually reachable.
+    private val DOMAIN_URLS = listOf(
+        "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt",
+        "https://cdn.jsdelivr.net/gh/Flowseal/tg-ws-proxy@main/.github/cfproxy-domains.txt",
+    )
+
+    private const val STALE_INTERVAL_MS = 60 * 60 * 1000L
+    private const val SYNC_TIMEOUT_MS = 6_000
+    private const val ASYNC_TIMEOUT_MS = 10_000
 
     private val lastFetchAttemptMs = AtomicLong(0L)
 
     /**
      * Called right before the native engine starts. Guarantees the cache file
-     * exists and is non-empty, and kicks off a background GitHub refresh when
-     * the cached copy looks stale.
+     * exists and is non-empty. When the cached copy is older than an hour,
+     * refreshes synchronously (bounded by short timeouts) so this start uses
+     * fresh domains; otherwise kicks off a background refresh.
      */
     fun ensureFresh(cacheDir: File) {
         val file = File(cacheDir, FILE_NAME)
@@ -69,19 +77,22 @@ object CfDomainCache {
             writeDomains(file, FALLBACK_DOMAINS)
         }
         val age = System.currentTimeMillis() - file.lastModified()
-        if (age > MIN_REFRESH_INTERVAL_MS) {
-            refreshInBackground(cacheDir)
-        }
-    }
+        if (age <= STALE_INTERVAL_MS) return
 
-    private fun refreshInBackground(cacheDir: File) {
         val now = System.currentTimeMillis()
         val last = lastFetchAttemptMs.get()
-        if (now - last < 10 * 60 * 1000L) return
+        if (now - last < 5 * 60 * 1000L) return
         if (!lastFetchAttemptMs.compareAndSet(last, now)) return
 
+        val fresh = fetchDomainList(sync = true)
+        if (fresh != null) {
+            writeDomains(file, fresh)
+            return
+        }
+        // Both mirrors failed (offline / blocked): refresh in the background
+        // with longer timeouts so a later start still picks the list up.
         Thread {
-            runCatching { fetchDomainList()?.let { writeDomains(File(cacheDir, FILE_NAME), it) } }
+            runCatching { fetchDomainList(sync = false)?.let { writeDomains(file, it) } }
         }.apply {
             isDaemon = true
             name = "cf-domain-cache-refresh"
@@ -89,10 +100,18 @@ object CfDomainCache {
         }
     }
 
-    private fun fetchDomainList(): List<String>? = runCatching {
-        val conn = URL(DOMAINS_URL).openConnection() as HttpURLConnection
-        conn.connectTimeout = CONNECT_TIMEOUT_MS
-        conn.readTimeout = READ_TIMEOUT_MS
+    private fun fetchDomainList(sync: Boolean): List<String>? {
+        for (url in DOMAIN_URLS) {
+            val result = fetchFrom(url, sync)
+            if (result != null) return result
+        }
+        return null
+    }
+
+    private fun fetchFrom(url: String, sync: Boolean): List<String>? = runCatching {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = if (sync) SYNC_TIMEOUT_MS else ASYNC_TIMEOUT_MS
+        conn.readTimeout = if (sync) SYNC_TIMEOUT_MS else ASYNC_TIMEOUT_MS
         conn.requestMethod = "GET"
         conn.setRequestProperty("User-Agent", "Mozilla/5.0 tg-ws-proxy-android")
         try {

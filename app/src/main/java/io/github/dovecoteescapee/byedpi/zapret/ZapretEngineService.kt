@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.github.dovecoteescapee.byedpi.R
@@ -13,7 +14,12 @@ import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.data.*
 import io.github.dovecoteescapee.byedpi.receiver.ScreenEventsController
 import io.github.dovecoteescapee.byedpi.services.setStatus
+import io.github.dovecoteescapee.byedpi.utility.AppLog
 import io.github.dovecoteescapee.byedpi.utility.createConnectionNotification
+import io.github.dovecoteescapee.byedpi.utility.getPreferences
+import io.github.dovecoteescapee.byedpi.utility.destroyForciblyCompat
+import io.github.dovecoteescapee.byedpi.utility.isAliveCompat
+import io.github.dovecoteescapee.byedpi.utility.waitForTimed
 import io.github.dovecoteescapee.byedpi.utility.registerNotificationChannel
 import io.github.dovecoteescapee.byedpi.widget.VpnWidgets
 import kotlinx.coroutines.Dispatchers

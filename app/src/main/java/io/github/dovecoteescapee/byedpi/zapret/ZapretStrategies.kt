@@ -50,30 +50,51 @@ object ZapretStrategies {
     }
 
     /*
-     * Разбирает .bat в аргументы nfqws: убирает --wf-* (WinDivert-only), пустые
-     * game-фильтры и подставляет пути к спискам и fake-бинарям.
+     * Converts a Flowseal .bat config into nfqws arguments: drops the whole batch
+     * prelude (everything before the winws.exe launch line), --wf-* (WinDivert-only)
+     * flags and empty game-filter groups, then rewrites %BIN%/%LISTS% to the real
+     * on-device paths.
+     *
+     * The prelude must not be filtered token by token: at least the `>` redirect and
+     * the window title's unmatched quote (the `%~n0` fragment followed by a quote)
+     * used to leak into run.sh, where `>` became a live shell redirection and the
+     * quote glued the whole rest of the nfqws command line into a single argument.
+     * Dropping everything before the binary token is the only safe cut.
      */
     fun parseArgs(context: Context, assetFile: String): List<String> {
         val raw = context.assets.open(assetFile).bufferedReader().readText()
+        return parseConfigText(
+            raw,
+            filesDir(context, "zapret/bin"),
+            filesDir(context, "zapret/lists"),
+        )
+    }
+
+    /*
+     * Pure text transform, unit-testable without an Android Context.
+     */
+    fun parseConfigText(raw: String, binDir: String, listsDir: String): List<String> {
         val joined = raw.replace("^", " ")
+        val tokens = joined.split(Regex("\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
+
+        // Everything before the winws.exe launch token is batch script, not nfqws args.
+        val launchIndex = tokens.indexOfFirst { token ->
+            token == "\"%BIN%winws.exe\"" || token == "winws.exe" ||
+                token.startsWith("%BIN%winws.exe")
+        }
+        if (launchIndex < 0) return emptyList()
+
         val args = mutableListOf<String>()
-        for (token in joined.split(Regex("\\s+"))) {
-            val t = token.trim()
-            if (t.isEmpty() || t == "start" || t.startsWith("\"zapret") ||
-                t == "/min" || t == "\"%BIN%winws.exe\"" || t == "winws.exe" ||
-                t.startsWith("%BIN%winws.exe")
-            ) {
+        for (token in tokens.subList(launchIndex + 1, tokens.size)) {
+            if (token.startsWith("--wf-tcp=") || token.startsWith("--wf-udp=")) {
                 continue
             }
-            if (t.startsWith("--wf-tcp=") || t.startsWith("--wf-udp=")) {
-                continue
-            }
-            if (t == "--filter-tcp=%GameFilterTCP%" || t == "--filter-udp=%GameFilterUDP%") {
-                // Пустой game-фильтр: группа без реального фильтра — пропускаем до --new.
+            if (token == "--filter-tcp=%GameFilterTCP%" || token == "--filter-udp=%GameFilterUDP%") {
+                // Empty game filter: the group has no real filters, skip it up to --new.
                 args.add("__DROP_GROUP__")
                 continue
             }
-            args.add(t)
+            args.add(token)
         }
 
         val cleaned = mutableListOf<String>()
@@ -90,14 +111,31 @@ object ZapretStrategies {
             cleaned.add(token)
         }
 
-        val binDir = filesDir(context, "zapret/bin")
-        val listsDir = filesDir(context, "zapret/lists")
+        /*
+         * Batch configs wrap values in double quotes (`--hostlist="%LISTS%file.txt"`).
+         * The opening quote sits after `=`, so a trailing trim('"') never removed it
+         * and nfqws received `--dpi-desync-fake-stun="/path/file.bin` - a path it
+         * cannot open, silently disabling STUN/voice fakes. Strip every double
+         * quote: in .bat they are value wrappers, never part of an nfqws argument.
+         */
         return cleaned.map { token ->
             token
                 .replace("%BIN%", "$binDir/")
                 .replace("%LISTS%", "$listsDir/")
+                .replace("\"", "")
+                .trim()
         }
     }
+
+    /*
+     * Quotes one argument for run.sh (POSIX sh). Single quotes are safe for everything
+     * except a single quote itself. Tokens parsed from .bat configs may still carry
+     * double quotes around paths; trim('"') drops that wrapping, and any residual
+     * quote can no longer glue neighbouring arguments the way the leaked window
+     * title quote used to.
+     */
+    fun quoteForShell(arg: String): String =
+        "'" + arg.trim('"').replace("'", "'\\''") + "'"
 
     fun filesDir(context: Context, sub: String): String =
         "${context.filesDir.absolutePath}/$sub"
