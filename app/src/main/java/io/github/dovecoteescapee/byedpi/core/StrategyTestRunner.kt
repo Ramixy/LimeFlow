@@ -2,13 +2,16 @@ package io.github.dovecoteescapee.byedpi.core
 
 import android.content.Context
 import android.os.Build
-import android.util.Log
 import io.github.dovecoteescapee.byedpi.data.ClassicEngine
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import io.github.dovecoteescapee.byedpi.data.StrategyMemory
 import io.github.dovecoteescapee.byedpi.services.appStatus
 import io.github.dovecoteescapee.byedpi.data.AppStatus
+import io.github.dovecoteescapee.byedpi.utility.AppLog
+import io.github.dovecoteescapee.byedpi.utility.destroyForciblyCompat
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
+import io.github.dovecoteescapee.byedpi.utility.isAliveCompat
+import io.github.dovecoteescapee.byedpi.utility.waitForTimed
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +102,6 @@ object StrategyTestRunner {
 
     private const val PROXY_HOST = "127.0.0.1"
     private const val REQUEST_TIMEOUT_MS = 4_000
-    private const val PROBE_RETRY_DELAY_MS = 400L
     private const val PROXY_START_DELAY_MS = 500L
     private const val PROXY_STOP_TIMEOUT_MS = 2_000L
     private const val BETWEEN_STRATEGIES_DELAY_MS = 150L
@@ -172,6 +174,13 @@ object StrategyTestRunner {
                     }
                     savedByProfile[profile.id] = result
                     persistResults(appContext, savedByProfile.values.sortedWith(profileResultComparator))
+                    AppLog.i(
+                        TAG,
+                        "Strategy \"${profile.name}\" [${index + 1}/${profiles.size}]: " +
+                            "protocols ${result.protocolSuccess}, ping ${result.pingSuccess}, " +
+                            "youtube ${result.youtubeScore}%, discord ${result.discordScore}%, " +
+                            "avg ${result.averagePingMs?.let { "%.0f ms".format(Locale.US, it) } ?: "n/a"}",
+                    )
                     _state.value = State.Testing(
                         total = profiles.size,
                         done = index + 1,
@@ -182,12 +191,17 @@ object StrategyTestRunner {
                 }
 
                 val ranked = savedByProfile.values.sortedWith(profileResultComparator)
+                AppLog.i(
+                    TAG,
+                    "Strategy test finished: ${ranked.size} profiles ranked, " +
+                        "best: ${ranked.firstOrNull()?.profile?.name ?: "none"}",
+                )
                 _state.value = State.Finished(ranked.size)
             } catch (error: CancellationException) {
                 _state.value = State.Cancelled
                 throw error
             } catch (error: Throwable) {
-                Log.e(TAG, "Full strategy test failed", error)
+                AppLog.e(TAG, "Full strategy test failed", error)
                 _state.value = State.Failed
             }
         }
@@ -217,7 +231,7 @@ object StrategyTestRunner {
                 engine.startProxy(ByeDpiProxyCmdPreferences(args + arrayOf("-p", port.toString())))
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                Log.e(TAG, "Strategy ${profile.name} failed to start", error)
+                AppLog.e(TAG, "Strategy ${profile.name} failed to start", error)
             } finally {
                 engineExited.set(true)
             }
@@ -230,17 +244,6 @@ object StrategyTestRunner {
             }
 
             val requestSlots = Semaphore(MAX_PARALLEL_REQUESTS)
-
-            /*
-             * The very first request through a freshly started engine pays a cold
-             * DNS resolve on the engine side, and its ClientHello is the one the
-             * DPI box is most likely to drop outright. Run one discarded warm-up
-             * probe so the scored probes measure the strategy, not engine start-up.
-             */
-            runCatching {
-                requestSlots.withPermit { probeHttps(WARMUP_TARGET, port, null) }
-            }
-
             val checks = TARGETS.map { target ->
                 async(Dispatchers.IO) {
                     checkTarget(target, port, requestSlots)
@@ -315,18 +318,7 @@ object StrategyTestRunner {
         )
     }
 
-    private fun probeHttps(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean {
-        if (probeOnce(target, proxyPort, tlsVersion) == true) return true
-        /*
-         * DPI boxes often drop exactly the first ClientHello of a new flow pattern
-         * (fresh engine, fresh port) while letting the retry through. One retry
-         * keeps a working strategy from being scored as TLS connect errors.
-         */
-        Thread.sleep(PROBE_RETRY_DELAY_MS)
-        return probeOnce(target, proxyPort, tlsVersion) == true
-    }
-
-    private fun probeOnce(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean =
+    private fun probeHttps(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean =
         runCatching {
             val host = target.host
             val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(PROXY_HOST, proxyPort))
@@ -408,9 +400,9 @@ object StrategyTestRunner {
             .redirectErrorStream(true)
             .start()
         val output = process.inputStream.bufferedReader().use { it.readText() }
-        if (!process.waitFor(3, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            process.waitFor(1, TimeUnit.SECONDS)
+        if (!process.waitForTimed(3, TimeUnit.SECONDS)) {
+            process.destroyForciblyCompat()
+            process.waitForTimed(1, TimeUnit.SECONDS)
             return@runCatching null
         }
         PING_TIME.find(output)?.groupValues?.get(1)?.toDoubleOrNull()
@@ -493,7 +485,7 @@ object StrategyTestRunner {
             }
         }
     }.getOrElse {
-        Log.w(TAG, "Saved strategy results are invalid", it)
+        AppLog.w(TAG, "Saved strategy results are invalid", it)
         emptyList()
     }
 
@@ -537,17 +529,6 @@ object StrategyTestRunner {
         if (has(key) && !isNull(key)) getDouble(key) else null
 
     private const val SAVED_RESULTS_KEY = StrategyMemory.RESULTS_KEY
-
-    /*
-     * Warm-up probe target: Discord API is small, always up and exercises the
-     * same Cloudflare edge as every other scored Discord target.
-     */
-    private val WARMUP_TARGET = TestTarget(
-        "Warmup",
-        "discord.com",
-        ServiceCategory.DISCORD,
-        path = "/api/v9/gateway",
-    )
 
     private val TARGETS = listOf(
         TestTarget(

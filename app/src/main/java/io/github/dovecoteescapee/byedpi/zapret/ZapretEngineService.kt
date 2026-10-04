@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.github.dovecoteescapee.byedpi.R
@@ -36,6 +35,7 @@ class ZapretEngineService : LifecycleService() {
         private const val FOREGROUND_SERVICE_ID: Int = 3
         private const val NOTIFICATION_CHANNEL_ID = "LimeFlowZapret"
         private const val QUEUE_NUM = 537
+        private const val NFQWS_TAG = "nfqws"
         private const val ACTION_START = "io.github.dovecoteescapee.byedpi.zapret.START"
         private const val ACTION_STOP = "io.github.dovecoteescapee.byedpi.zapret.STOP"
 
@@ -69,8 +69,8 @@ class ZapretEngineService : LifecycleService() {
         fun hasRoot(): Boolean = rootAvailable ?: runCatching {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             // A pending su prompt or a wedged su binary must not hang the caller.
-            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                process.destroyForcibly()
+            if (!process.waitForTimed(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForciblyCompat()
                 return false
             }
             val output = process.inputStream.bufferedReader().use { it.readText() }
@@ -82,6 +82,7 @@ class ZapretEngineService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.verbose = getPreferences().getBoolean("developer_mode", false)
         registerNotificationChannel(
             this,
             NOTIFICATION_CHANNEL_ID,
@@ -132,11 +133,12 @@ class ZapretEngineService : LifecycleService() {
 
     private suspend fun startEngine(strategyId: String) {
         if (_state.value == ZapretState.Running) {
-            Log.w(TAG, "Zapret engine already running")
+            AppLog.w(TAG, "Zapret engine already running")
             return
         }
         _state.value = ZapretState.Halted
         _statusText.value = getString(R.string.zapret_preparing)
+        AppLog.i(TAG, "Starting zapret strategy: $strategyId")
 
         // Without su the whole mode is impossible; fail fast with a clear
         // status instead of a stack trace from Runtime.exec.
@@ -162,18 +164,27 @@ class ZapretEngineService : LifecycleService() {
                     .exec(arrayOf("su", "-c", "sh ${scriptFile.absolutePath}"))
                 // Движок должен жить: если он умер сразу — ошибка конфигурации.
                 // Вывод нужно постоянно дренировать, иначе пайп (~64 КБ)
-                // переполнится и nfqws зависнет на записи.
+                // переполнится и nfqws зависнет на записи; заодно каждая строка
+                // попадает в журнал режима разработчика.
                 val proc = process!!
-                Thread { proc.inputStream.use { it.copyTo(java.io.ByteArrayOutputStream()) } }.apply {
+                Thread {
+                    proc.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { AppLog.i(NFQWS_TAG, it) }
+                    }
+                }.apply {
                     isDaemon = true
                     start()
                 }
-                Thread { proc.errorStream.use { it.copyTo(java.io.ByteArrayOutputStream()) } }.apply {
+                Thread {
+                    proc.errorStream.bufferedReader().useLines { lines ->
+                        lines.forEach { AppLog.w(NFQWS_TAG, it) }
+                    }
+                }.apply {
                     isDaemon = true
                     start()
                 }
                 Thread.sleep(1_500)
-                if (!proc.isAlive) {
+                if (!proc.isAliveCompat()) {
                     throw IllegalStateException("nfqws exited: " + proc.exitValue())
                 }
                 _state.value = ZapretState.Running
@@ -181,7 +192,7 @@ class ZapretEngineService : LifecycleService() {
                 publish(ZapretState.Running)
             }
         } catch (error: Throwable) {
-            Log.e(TAG, "Failed to start zapret engine", error)
+            AppLog.e(TAG, "Failed to start zapret engine", error)
             // A failed start must roll back: iptables rules from the script may
             // already be installed while the queue is dead.
             cleanupEngine()
@@ -232,6 +243,7 @@ class ZapretEngineService : LifecycleService() {
                 val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "sh ${script.absolutePath}"))
                 p.waitFor()
             }
+            AppLog.i(TAG, "Zapret engine cleaned up")
         }
     }
 
@@ -255,9 +267,7 @@ class ZapretEngineService : LifecycleService() {
                 append("$tool -t mangle -C OUTPUT -j LIMEFLOW 2>/dev/null ||")
                 append(" $tool -t mangle -I OUTPUT 1 -j LIMEFLOW 2>/dev/null\n")
             }
-            append("exec ")
-            append(ZapretStrategies.quoteForShell(binary))
-            append(" --qnum=$QUEUE_NUM $nfqArgs\n")
+            append("exec '$binary' --qnum=$QUEUE_NUM $nfqArgs\n")
         }
     }
 

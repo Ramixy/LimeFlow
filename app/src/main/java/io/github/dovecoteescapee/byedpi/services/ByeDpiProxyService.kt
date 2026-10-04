@@ -4,7 +4,6 @@ import android.app.Notification
 import android.content.Intent
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 import android.os.Build
-import android.util.Log
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import io.github.dovecoteescapee.byedpi.R
@@ -39,6 +38,7 @@ class ByeDpiProxyService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLog.verbose = getPreferences().getBoolean("developer_mode", false)
         registerNotificationChannel(
             this,
             NOTIFICATION_CHANNEL_ID,
@@ -67,14 +67,14 @@ class ByeDpiProxyService : LifecycleService() {
             }
 
             else -> {
-                Log.w(TAG, "Unknown action: $action")
+                AppLog.w(TAG, "Unknown action: $action")
                 START_NOT_STICKY
             }
         }
     }
 
     private suspend fun start() {
-        Log.i(TAG, "Starting")
+        AppLog.i(TAG, "Starting")
 
         if (status == ServiceStatus.Connected) {
             Log.w(TAG, "Proxy already connected")
@@ -108,14 +108,14 @@ class ByeDpiProxyService : LifecycleService() {
     }
 
     private suspend fun stop() {
-        Log.i(TAG, "Stopping VPN")
+        AppLog.i(TAG, "Stopping VPN")
 
         mutex.withLock {
             try {
                 stopProxy()
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                Log.e(TAG, "Failed to stop proxy", error)
+                AppLog.e(TAG, "Failed to stop proxy", error)
             }
         }
         updateStatus(ServiceStatus.Disconnected)
@@ -123,10 +123,10 @@ class ByeDpiProxyService : LifecycleService() {
     }
 
     private suspend fun startProxy() {
-        Log.i(TAG, "Starting proxy")
+        AppLog.i(TAG, "Starting proxy")
 
         if (proxyJob != null) {
-            Log.w(TAG, "Proxy fields not null")
+            AppLog.w(TAG, "Proxy fields not null")
             throw IllegalStateException("Proxy fields not null")
         }
 
@@ -138,7 +138,7 @@ class ByeDpiProxyService : LifecycleService() {
                 proxy.startProxy(preferences)
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                Log.e(TAG, "Native proxy failed during startup", error)
+                AppLog.e(TAG, "Native proxy failed during startup", error)
                 withContext(Dispatchers.Main) {
                     lifecycleScope.launch {
                         stop()
@@ -150,7 +150,7 @@ class ByeDpiProxyService : LifecycleService() {
 
             withContext(Dispatchers.Main) {
                 if (code != 0) {
-                    Log.e(TAG, "Proxy stopped with code $code")
+                    AppLog.e(TAG, "Proxy stopped with code $code")
                     lifecycleScope.launch {
                         stop()
                         updateStatus(ServiceStatus.Failed)
@@ -167,39 +167,39 @@ class ByeDpiProxyService : LifecycleService() {
             throw IllegalStateException("Proxy rejected the selected strategy")
         }
 
-        Log.i(TAG, "Proxy started")
+        AppLog.i(TAG, "Proxy started")
     }
 
     private suspend fun stopProxy() {
-        Log.i(TAG, "Stopping proxy")
+        AppLog.i(TAG, "Stopping proxy")
 
         if (proxyJob == null) {
-            Log.w(TAG, "Proxy already disconnected")
+            AppLog.w(TAG, "Proxy already disconnected")
             return
         }
 
         runCatching { proxy.stopProxy() }
-            .onFailure { Log.e(TAG, "Graceful proxy stop failed", it) }
+            .onFailure { AppLog.e(TAG, "Graceful proxy stop failed", it) }
         proxyJob?.cancel()
         val completed = withTimeoutOrNull(2_000) {
             proxyJob?.join()
             true
         }
         if (completed == null) {
-            Log.w(TAG, "Proxy did not stop in time; forcing socket close")
+            AppLog.w(TAG, "Proxy did not stop in time; forcing socket close")
             runCatching { proxy.jniForceClose() }
-                .onFailure { Log.e(TAG, "Forced proxy close failed", it) }
+                .onFailure { AppLog.e(TAG, "Forced proxy close failed", it) }
         }
         proxyJob = null
 
-        Log.i(TAG, "Proxy stopped")
+        AppLog.i(TAG, "Proxy stopped")
     }
 
     private fun getByeDpiPreferences(): ByeDpiProxyPreferences =
         ByeDpiProxyPreferences.fromSharedPreferences(getPreferences())
 
     private fun updateStatus(newStatus: ServiceStatus) {
-        Log.d(TAG, "Proxy status changed from $status to $newStatus")
+        AppLog.d(TAG, "Proxy status changed from $status to $newStatus")
 
         status = newStatus
 

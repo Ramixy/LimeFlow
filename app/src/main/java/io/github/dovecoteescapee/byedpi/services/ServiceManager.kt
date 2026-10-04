@@ -60,14 +60,14 @@ object ServiceManager {
             }
 
             Mode.VPN -> {
-                Log.i(TAG, "Starting VPN")
+                AppLog.i(TAG, "Starting VPN")
                 val intent = Intent(context, ByeDpiVpnService::class.java)
                 intent.action = START_ACTION
                 ContextCompat.startForegroundService(context, intent)
             }
 
             Mode.Proxy -> {
-                Log.i(TAG, "Starting proxy")
+                AppLog.i(TAG, "Starting proxy")
                 val intent = Intent(context, ByeDpiProxyService::class.java)
                 intent.action = START_ACTION
                 ContextCompat.startForegroundService(context, intent)
@@ -85,14 +85,14 @@ object ServiceManager {
             }
 
             Mode.VPN -> {
-                Log.i(TAG, "Stopping VPN")
+                AppLog.i(TAG, "Stopping VPN")
                 val intent = Intent(context, ByeDpiVpnService::class.java)
                 intent.action = STOP_ACTION
                 ContextCompat.startForegroundService(context, intent)
             }
 
             Mode.Proxy -> {
-                Log.i(TAG, "Stopping proxy")
+                AppLog.i(TAG, "Stopping proxy")
                 val intent = Intent(context, ByeDpiProxyService::class.java)
                 intent.action = STOP_ACTION
                 ContextCompat.startForegroundService(context, intent)

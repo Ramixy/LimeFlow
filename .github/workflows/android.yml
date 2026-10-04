@@ -30,6 +30,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        # Пакет "tools" удалён из SDK Manager и валит установку (дефолт action);
+        # platform-tools достаточно, остальное ставит следующий шаг.
+        with:
+          packages: platform-tools
 
       - name: Install native tools
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.1.8937393" "cmake;3.22.1"
@@ -44,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: LimeFlow-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
 
       - name: Upload lint report
         if: always()
