@@ -23,7 +23,7 @@
             android:contentDescription="@string/back_symbol"
             android:padding="12dp"
             android:src="@drawable/ic_arrow_back_lime"
-            app:tint="@color/app_text" />
+            app:tint="?android:attr/textColorPrimary" />
 
         <com.google.android.material.textview.MaterialTextView
             android:layout_width="0dp"
@@ -31,7 +31,7 @@
             android:layout_marginStart="8dp"
             android:layout_weight="1"
             android:text="@string/choose_strategy"
-            android:textColor="@color/app_text"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="18sp"
             android:textStyle="bold" />
 
@@ -125,7 +125,7 @@
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/app_surface"
+        app:cardBackgroundColor="?attr/colorSurface"
         app:cardCornerRadius="12dp"
         app:cardElevation="0dp"
         app:strokeColor="?attr/colorPrimary"
@@ -146,7 +146,7 @@
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:textColor="@color/app_text"
+                android:textColor="?android:attr/textColorPrimary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
@@ -257,14 +257,14 @@
                 android:text="@string/strategy_filter_youtube"
                 android:textAllCaps="false"
                 android:textStyle="bold"
-                app:backgroundTint="@color/app_surface"
+                app:backgroundTint="?attr/colorSurface"
                 app:cornerRadius="18dp"
                 app:icon="@drawable/ic_youtube"
                 app:iconGravity="textStart"
                 app:iconPadding="4dp"
                 app:iconSize="14dp"
                 app:iconTint="@null"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -281,14 +281,14 @@
                 android:text="@string/strategy_filter_discord"
                 android:textAllCaps="false"
                 android:textStyle="bold"
-                app:backgroundTint="@color/app_surface"
+                app:backgroundTint="?attr/colorSurface"
                 app:cornerRadius="18dp"
                 app:icon="@drawable/ic_discord"
                 app:iconGravity="textStart"
                 app:iconPadding="4dp"
                 app:iconSize="14dp"
                 app:iconTint="@null"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -305,9 +305,9 @@
                 android:text="@string/strategy_filter_operator"
                 android:textAllCaps="false"
                 android:textStyle="bold"
-                app:backgroundTint="@color/app_surface"
+                app:backgroundTint="?attr/colorSurface"
                 app:cornerRadius="18dp"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -324,9 +324,9 @@
                 android:text="@string/strategy_filter_other"
                 android:textAllCaps="false"
                 android:textStyle="bold"
-                app:backgroundTint="@color/app_surface"
+                app:backgroundTint="?attr/colorSurface"
                 app:cornerRadius="18dp"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp" />
         </LinearLayout>
     </HorizontalScrollView>
@@ -367,10 +367,10 @@
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/app_surface"
+        app:cardBackgroundColor="?attr/colorSurface"
         app:cardCornerRadius="18dp"
         app:cardElevation="0dp"
-        app:strokeColor="@color/app_stroke"
+        app:strokeColor="?attr/colorControlHighlight"
         app:strokeWidth="1dp">
 
         <LinearLayout
@@ -399,7 +399,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/smart_tops_hide"
-                    android:textColor="@color/app_text_muted"
+                    android:textColor="?android:attr/textColorSecondary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -431,7 +431,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="12sp" />
                 </LinearLayout>
 
@@ -455,7 +455,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="6dp"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
@@ -474,8 +474,8 @@
         android:inputType="text"
         android:maxLines="1"
         android:paddingHorizontal="12dp"
-        android:textColor="@color/app_text"
-        android:textColorHint="@color/app_text_muted"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textColorHint="?android:attr/textColorSecondary"
         android:textSize="13sp" />
 
     <androidx.recyclerview.widget.RecyclerView

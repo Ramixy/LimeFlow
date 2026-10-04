@@ -10,7 +10,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.databinding.ActivityZapretEngineBinding
+import io.github.dovecoteescapee.byedpi.services.ServiceManager
 import io.github.dovecoteescapee.byedpi.services.appStatus
+import io.github.dovecoteescapee.byedpi.utility.getPreferences
 import io.github.dovecoteescapee.byedpi.data.AppStatus
 import io.github.dovecoteescapee.byedpi.utility.applyLimeFlowPalette
 import io.github.dovecoteescapee.byedpi.zapret.ZapretEngineService
@@ -112,6 +114,10 @@ class ZapretEngineActivity : AppCompatActivity() {
         val selectedName = binding.zapretStrategy.text?.toString().orEmpty()
         val strategy = ZapretStrategies.list()
             .firstOrNull { it.name == selectedName } ?: ZapretStrategies.list().first()
+        // Persist so the engine switcher, widgets and automations reuse it.
+        getPreferences().edit()
+            .putString(ServiceManager.ZAPRET_STRATEGY_KEY, strategy.id)
+            .apply()
         ZapretEngineService.start(applicationContext, strategy.id)
     }
 }

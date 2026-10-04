@@ -21,4 +21,10 @@
     <color name="youtube_red">#E11D2E</color>
     <color name="youtube_red_soft">#33E11D2E</color>
     <color name="discord_blurple">#5865F2</color>
+    <color name="widget_text">#FFFFFFFF</color>
+    <color name="widget_text_muted">#B3C6DE</color>
+    <color name="widget_connected">#FF43C99A</color>
+    <color name="widget_idle">#FFB9C7DA</color>
+    <color name="launcher_dark_bg">#FF000000</color>
+    <color name="launcher_lime_bg">#FFAEEA00</color>
 </resources>

@@ -114,18 +114,18 @@ class QuickTileService : TileService() {
         setState(Tile.STATE_ACTIVE)
         setState(Tile.STATE_UNAVAILABLE)
 
-        val (status) = appStatus
+        val (status, mode) = appStatus
         when (status) {
             AppStatus.Halted -> {
-                val mode = getPreferences().mode()
-
-                if (mode == Mode.VPN && VpnService.prepare(this) != null) {
+                if (ServiceManager.engineMode(this) == Mode.VPN &&
+                    VpnService.prepare(this) != null
+                ) {
                     updateStatus()
                     launchActivity()
                     return
                 }
 
-                ServiceManager.start(this, mode)
+                ServiceManager.start(this)
             }
 
             AppStatus.Running -> ServiceManager.stop(this)

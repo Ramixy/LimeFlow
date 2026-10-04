@@ -11,7 +11,9 @@ import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyPreferences
 import io.github.dovecoteescapee.byedpi.data.*
+import io.github.dovecoteescapee.byedpi.receiver.ScreenEventsController
 import io.github.dovecoteescapee.byedpi.utility.*
+import io.github.dovecoteescapee.byedpi.widget.VpnWidgets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -42,6 +44,12 @@ class ByeDpiProxyService : LifecycleService() {
             NOTIFICATION_CHANNEL_ID,
             R.string.proxy_channel_name,
         )
+        ScreenEventsController.register(this)
+    }
+
+    override fun onDestroy() {
+        ScreenEventsController.unregister(this)
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -68,22 +76,21 @@ class ByeDpiProxyService : LifecycleService() {
     private suspend fun start() {
         Log.i(TAG, "Starting")
 
+        if (status == ServiceStatus.Connected) {
+            Log.w(TAG, "Proxy already connected")
+            return
+        }
+
         try {
             mutex.withLock {
-                if (status == ServiceStatus.Connected) {
-                    Log.w(TAG, "Proxy already connected")
-                    return
-                }
                 startProxy()
-                // Publish Connected while still holding the lock so a queued
-                // second START observes it instead of racing past the check.
-                updateStatus(ServiceStatus.Connected)
             }
+            updateStatus(ServiceStatus.Connected)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             Log.e(TAG, "Failed to start proxy", error)
-            updateStatus(ServiceStatus.Failed)
             stop()
+            updateStatus(ServiceStatus.Failed)
         }
     }
 
@@ -111,11 +118,7 @@ class ByeDpiProxyService : LifecycleService() {
                 Log.e(TAG, "Failed to stop proxy", error)
             }
         }
-        // Don't overwrite a FAILED terminal state with STOPPED: the failure
-        // path sets the status before calling stop().
-        if (status != ServiceStatus.Failed) {
-            updateStatus(ServiceStatus.Disconnected)
-        }
+        updateStatus(ServiceStatus.Disconnected)
         stopSelf()
     }
 
@@ -138,8 +141,8 @@ class ByeDpiProxyService : LifecycleService() {
                 Log.e(TAG, "Native proxy failed during startup", error)
                 withContext(Dispatchers.Main) {
                     lifecycleScope.launch {
-                        updateStatus(ServiceStatus.Failed)
                         stop()
+                        updateStatus(ServiceStatus.Failed)
                     }
                 }
                 return@launch
@@ -149,8 +152,8 @@ class ByeDpiProxyService : LifecycleService() {
                 if (code != 0) {
                     Log.e(TAG, "Proxy stopped with code $code")
                     lifecycleScope.launch {
-                        updateStatus(ServiceStatus.Failed)
                         stop()
+                        updateStatus(ServiceStatus.Failed)
                     }
                 } else {
                     lifecycleScope.launch { stop() }
@@ -221,6 +224,7 @@ class ByeDpiProxyService : LifecycleService() {
         )
         intent.putExtra(SENDER, Sender.Proxy.ordinal)
         sendBroadcast(intent)
+        VpnWidgets.updateAll(this)
     }
 
     private fun createNotification(): Notification =

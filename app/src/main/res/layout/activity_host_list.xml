@@ -20,7 +20,7 @@
             android:layout_height="48dp"
             android:minWidth="0dp"
             android:text="@string/back_symbol"
-            android:textColor="@color/app_text"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="30sp"
             app:backgroundTint="@android:color/transparent" />
 
@@ -30,7 +30,7 @@
             android:layout_marginStart="4dp"
             android:layout_weight="1"
             android:text="@string/host_list_title"
-            android:textColor="@color/app_text"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="22sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -40,7 +40,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:text="@string/host_list_hint"
-        android:textColor="@color/app_text_muted"
+        android:textColor="?android:attr/textColorSecondary"
         android:textSize="12sp" />
 
     <LinearLayout
@@ -55,7 +55,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:hint="@string/host_list_add_hint"
-            app:boxBackgroundColor="@color/app_surface"
+            app:boxBackgroundColor="?attr/colorSurface"
             app:boxCornerRadiusBottomEnd="16dp"
             app:boxCornerRadiusBottomStart="16dp"
             app:boxCornerRadiusTopEnd="16dp"
@@ -68,7 +68,7 @@
                 android:imeOptions="actionDone"
                 android:inputType="textUri"
                 android:maxLines="1"
-                android:textColor="@color/app_text" />
+                android:textColor="?android:attr/textColorPrimary" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton
@@ -161,7 +161,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:hint="@string/host_list_search"
-        app:boxBackgroundColor="@color/app_surface"
+        app:boxBackgroundColor="?attr/colorSurface"
         app:boxCornerRadiusBottomEnd="16dp"
         app:boxCornerRadiusBottomStart="16dp"
         app:boxCornerRadiusTopEnd="16dp"
@@ -174,7 +174,7 @@
             android:layout_height="wrap_content"
             android:inputType="text"
             android:maxLines="1"
-            android:textColor="@color/app_text" />
+            android:textColor="?android:attr/textColorPrimary" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <LinearLayout
@@ -189,7 +189,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:paddingVertical="8dp"
-            android:textColor="@color/app_text_muted"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="12sp" />
 
         <com.google.android.material.button.MaterialButton

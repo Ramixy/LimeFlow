@@ -1,0 +1,100 @@
+﻿.\gradlew.bat : WARNING: A restricted method in java.lang.System has been called
+строка:1 знак:89
++ ...  'windows'; .\gradlew.bat :app:testDebugUnitTest --console=plain 2>&1 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: A rest...has been called:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnam
+ed module (file:/C:/Users/roman/.gradle/wrapper/dists/gradle-8.4-bin/1w5dpkrfk8irigvoxmyhowfim/gradle-8.4/lib/native-pl
+atform-0.22-milestone-25.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+
+> Configure project :app
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+WARNING: [CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+[CXX5106] NDK was located by using ndk.dir property. This method is deprecated and will be removed in a future release. Please delete ndk.dir from local.properties and set android.ndkVersion to [25.1.8937393] in all native modules in the project. https://developer.android.com/r/studio-ui/ndk-dir
+Command: [C:\Users\roman\dev-tools\android-sdk\ndk\25.1.8937393\ndk-build.cmd, NDK_PROJECT_PATH=build/intermediates/ndkBuild, NDK_LIBS_OUT=build/intermediates/ndkBuild/hev-libs, APP_BUILD_SCRIPT=src/main/jni/Android.mk, NDK_APPLICATION_MK=src/main/jni/Application.mk]
+
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+
+> Task :app:runNdkBuild
+[armeabi-v7a] Install        : libhev-socks5-tunnel.so => hev-libs/armeabi-v7a/libhev-socks5-tunnel.so
+[arm64-v8a] Install        : libhev-socks5-tunnel.so => hev-libs/arm64-v8a/libhev-socks5-tunnel.so
+[x86] Install        : libhev-socks5-tunnel.so => hev-libs/x86/libhev-socks5-tunnel.so
+[x86_64] Install        : libhev-socks5-tunnel.so => hev-libs/x86_64/libhev-socks5-tunnel.so
+
+> Task :app:preBuild
+> Task :app:preDebugBuild
+> Task :app:dataBindingMergeDependencyArtifactsDebug UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :tgwsproxy:preBuild UP-TO-DATE
+> Task :tgwsproxy:preDebugBuild UP-TO-DATE
+> Task :tgwsproxy:generateDebugResValues UP-TO-DATE
+> Task :tgwsproxy:generateDebugResources UP-TO-DATE
+> Task :tgwsproxy:packageDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :tgwsproxy:parseDebugLocalResources UP-TO-DATE
+> Task :tgwsproxy:generateDebugRFile UP-TO-DATE
+> Task :app:dataBindingGenBaseClassesDebug UP-TO-DATE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :tgwsproxy:writeDebugAarMetadata UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :tgwsproxy:extractDeepLinksDebug UP-TO-DATE
+> Task :tgwsproxy:processDebugManifest UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :tgwsproxy:compileDebugLibraryResources UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :tgwsproxy:checkKotlinGradlePluginConfigurationErrors
+> Task :tgwsproxy:generateDebugBuildConfig UP-TO-DATE
+> Task :tgwsproxy:compileDebugKotlin UP-TO-DATE
+> Task :tgwsproxy:javaPreCompileDebug UP-TO-DATE
+> Task :tgwsproxy:compileDebugJavaWithJavac UP-TO-DATE
+> Task :tgwsproxy:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:compileDebugKotlin UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:bundleDebugClassesToRuntimeJar UP-TO-DATE
+> Task :app:bundleDebugClassesToCompileJar UP-TO-DATE
+> Task :app:compileDebugUnitTestKotlin UP-TO-DATE
+> Task :app:preDebugUnitTestBuild
+> Task :app:javaPreCompileDebugUnitTest UP-TO-DATE
+> Task :app:compileDebugUnitTestJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:processDebugUnitTestJavaRes UP-TO-DATE
+> Task :tgwsproxy:bundleLibRuntimeToJarDebug UP-TO-DATE
+> Task :tgwsproxy:processDebugJavaRes UP-TO-DATE
+> Task :app:testDebugUnitTest UP-TO-DATE
+
+BUILD SUCCESSFUL in 1s
+45 actionable tasks: 3 executed, 42 up-to-date

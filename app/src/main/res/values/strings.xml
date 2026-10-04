@@ -330,4 +330,189 @@
     <string name="strategy_error_timeout">Таймаут должен быть от 0.1 до 120 секунд.</string>
     <string name="strategy_error_advanced">Каждый дополнительный параметр должен начинаться с «-».</string>
     <string name="strategy_error_empty">Добавьте хотя бы один метод или параметр.</string>
+    <string name="dev_mode_title">Для разработчиков</string>
+    <string name="dev_mode_summary">Живые логи движка и диагностика</string>
+    <string name="dev_logs_title">Журнал отладки</string>
+    <string name="dev_logs_subtitle">Поток логов приложения и движка в реальном времени</string>
+    <string name="dev_logs_empty">Логов пока нет — включите LimeFlow или нажмите «Обновить»</string>
+    <string name="dev_logs_refresh">Обновить</string>
+    <string name="dev_logs_copy">Копировать</string>
+    <string name="dev_logs_share">Поделиться</string>
+    <string name="dev_logs_clear">Очистить экран</string>
+    <string name="dev_logs_filter_all">Все</string>
+    <string name="dev_logs_filter_error">Ошибки</string>
+    <string name="dev_logs_filter_engine">Движок</string>
+    <string name="dev_logs_copied">Скопировано в буфер</string>
+    <string name="dev_logs_lines">%1$d строк</string>
+    <string name="dev_stats_title">Диагностика</string>
+    <string name="dev_stats_engine">Движок: %1$s</string>
+    <string name="dev_stats_mode">Режим: %1$s</string>
+    <string name="dev_stats_strategy">Стратегия: %1$s</string>
+    <string name="dev_stats_uptime">Время работы: %1$s</string>
+    <string name="dev_stats_pid">PID движка: %1$s</string>
+    <string name="dev_logs_watcher_on">Запись логов включена</string>
+    <string name="dev_logs_watcher_off">Запись логов выключена</string>
+    <string name="speed_down">↓ %1$s</string>
+    <string name="speed_up">↑ %1$s</string>
+    <string name="traffic_total">Всего: %1$s</string>
+    <string name="traffic_card_title">ТРАФИК</string>
+    <string name="traffic_none">—</string>
+    <string name="settings_monitoring">Мониторинг</string>
+    <string name="settings_speed_notification">Скорость в уведомлении</string>
+    <string name="settings_speed_notification_desc">Показывать ↓/↑ скорость в уведомлении раз в секунду</string>
+
+    <!-- Виджеты -->
+    <string name="widget_status_on">Подключено</string>
+    <string name="widget_status_off">Выключено</string>
+    <string name="widget_action_on">Включить</string>
+    <string name="widget_action_off">Выключить</string>
+    <string name="widget_1x1_description">Быстрое переключение LimeFlow</string>
+    <string name="widget_2x2_description">Статус и текущая стратегия LimeFlow</string>
+
+    <!-- Ярлыки и голосовые команды -->
+    <string name="shortcut_connect_short">Подключить</string>
+    <string name="shortcut_connect_long">Подключить LimeFlow</string>
+    <string name="shortcut_disconnect_short">Отключить</string>
+    <string name="shortcut_disconnect_long">Отключить LimeFlow</string>
+    <string name="shortcut_toggle_short">Переключить</string>
+    <string name="shortcut_toggle_long">Переключить LimeFlow</string>
+    <string name="shortcut_connecting">Подключаем LimeFlow…</string>
+    <string name="shortcut_disconnecting">Отключаем LimeFlow…</string>
+
+    <!-- Уведомление VPN -->
+    <string name="notification_pause">Пауза</string>
+    <string name="notification_resume">Возобновить</string>
+    <string name="notification_stop">Стоп</string>
+    <string name="vpn_notification_paused">На паузе — трафик не обрабатывается</string>
+    <string name="notification_speed">Скорость: ↑ %1$s ↓ %2$s</string>
+
+    <!-- Автозапуск и жизненный цикл -->
+    <string name="settings_boot_connect">Автоподключение при загрузке</string>
+    <string name="settings_unlock_connect">Подключать при разблокировке</string>
+    <string name="settings_screen_off_disconnect">Отключать при блокировке экрана</string>
+
+    <!-- Схемы URL-адресов -->
+    <string name="url_schemes_title">Схемы URL-адресов</string>
+    <string name="url_schemes_summary">Команды limeflow:// для Tasker и MacroDroid</string>
+    <string name="url_schemes_subtitle">Внешнее управление без лишних настроек</string>
+    <string name="url_schemes_hint">Эти ссылки запускают LimeFlow из автоматизаций, браузера или ярлыков: Tasker, MacroDroid, HTTP-шорткаты. Разрешение приложения не требуется. Для защищённого вещания есть ресивер app.alt11.mobile.CONNECT/DISCONNECT/TOGGLE/STATUS с разрешением подписи app.alt11.mobile.permission.CONTROL.</string>
+    <string name="url_scheme_copy">Копировать</string>
+    <string name="url_scheme_connect">Включить защиту</string>
+    <string name="url_scheme_disconnect">Выключить защиту</string>
+    <string name="url_scheme_toggle">Переключить состояние</string>
+    <string name="url_scheme_status">Ответить текущим статусом</string>
+
+    <!-- Статистика трафика -->
+    <string name="traffic_stats_title">Статистика</string>
+    <string name="traffic_stats_subtitle">Трафик через LimeFlow и время соединения</string>
+    <string name="traffic_period_session">Сессия</string>
+    <string name="traffic_period_today">Сегодня</string>
+    <string name="traffic_period_week">Неделя</string>
+    <string name="traffic_period_total">Всего</string>
+    <string name="traffic_period_value">↑ %1$s · ↓ %2$s · %3$s</string>
+    <string name="traffic_line_value">Сегодня: %1$s · всего: %2$s</string>
+    <string name="traffic_stats_note">Считается трафик VPN-режима (байты туннеля). В локальном режиме счётчики не изменяются.</string>
+    <string name="traffic_stats_reset">Сбросить статистику</string>
+    <string name="traffic_stats_reset_message">Счётчики сессии, дня, недели и общий будут обнулены. Отменить это нельзя.</string>
+    <string name="traffic_stats_reset_done">Статистика сброшена</string>
+
+    <!-- Проверка соединения и память -->
+    <string name="check_connection">Проверить соединение</string>
+    <string name="check_running">Проверяем…</string>
+    <string name="check_ok">%1$d мс</string>
+    <string name="check_captive">Captive portal · %1$d мс</string>
+    <string name="check_unreachable">Недоступно</string>
+    <string name="check_no_network">Нет интернета</string>
+    <string name="settings_memory_monitor">Память движка на главном экране</string>
+    <string name="memory_line">Память движка: %1$d МБ · %2$s</string>
+    <string name="memory_level_ok">Норма</string>
+    <string name="memory_level_elevated">Повышено</string>
+    <string name="memory_level_high">Высокое</string>
+
+    <!-- AMOLED -->
+    <string name="palette_amoled">AMOLED</string>
+
+    <!-- QR и шаринг стратегии -->
+    <string name="strategy_qr_title">QR и шаринг стратегии</string>
+    <string name="strategy_qr_summary">Показать QR, скопировать или поделиться ссылкой</string>
+    <string name="strategy_qr_copy">Скопировать</string>
+    <string name="strategy_qr_share">Поделиться</string>
+    <string name="strategy_qr_hint">Отсканируйте QR или откройте ссылку на другом устройстве с LimeFlow — стратегия добавится в «Свои».</string>
+    <string name="strategy_qr_too_large">Стратегия слишком большая для QR-кода — используйте «Скопировать» или «Поделиться».</string>
+    <string name="strategy_import_title">Добавить стратегию «%1$s»?</string>
+    <string name="strategy_import_message">Она появится в списке стратегий и будет выбрана. Текущая настройка сохранится в каталоге.</string>
+    <string name="strategy_import_apply">Добавить</string>
+    <string name="strategy_import_done">Стратегия добавлена</string>
+    <string name="strategy_import_invalid">Ссылка не содержит корректной стратегии</string>
+
+    <!-- Проверка обновлений -->
+    <string name="update_available_title">Доступно обновление %1$s</string>
+    <string name="update_available_message">Новая версия LimeFlow опубликована на GitHub Releases. Установочный файл будет подобран под архитектуру вашего устройства.</string>
+    <string name="update_download">Скачать</string>
+    <string name="update_later">Позже</string>
+
+    <!-- Опасная зона -->
+    <string name="danger_zone_title">Сброс</string>
+    <string name="danger_reset_network">Сетевые настройки туннеля</string>
+    <string name="danger_network_message">DNS, IPv6, адрес и порт движка, параметры стратегий вернутся к значениям по умолчанию. Свои стратегии и фильтр приложений не затрагиваются.</string>
+    <string name="danger_reset_theme">Тема и палитра</string>
+    <string name="danger_theme_message">Тема, палитра и динамические цвета вернутся к системным настройкам.</string>
+    <string name="danger_reset_stats">Статистика трафика</string>
+    <string name="danger_stats_message">Все счётчики трафика и времени соединения будут обнулены без возможности восстановления.</string>
+    <string name="danger_reset_logs">Логи</string>
+    <string name="danger_logs_message">Журнал отладки будет полностью очищен.</string>
+    <string name="danger_reset_all">Полный сброс приложения</string>
+
+    <!-- Жизненный цикл: автосеть, health-check, wakelock -->
+    <string name="settings_auto_network_strategy">Автоприменение стратегии при смене сети</string>
+    <string name="settings_health_check">Проверять работоспособность сайтов</string>
+    <string name="health_channel_name">Проверка стратегии</string>
+    <string name="health_notification_title">Похоже, стратегия перестала работать</string>
+    <string name="health_notification_text">Сайты из вашего списка недоступны через LimeFlow в последних проверках. Откройте поиск стратегий и подберите другую.</string>
+    <string name="settings_keep_awake">Держать устройство активным</string>
+    <string name="settings_keep_awake_warning">LimeFlow будет удерживать процессор включённым всё время работы. Это помогает на Xiaomi/HyperOS, где движок иначе засыпает, но расход батареи заметно вырастет.</string>
+
+    <!-- Журнал отладки: экспорт и хранение -->
+    <string name="dev_logs_search">Поиск по тексту или домену</string>
+    <string name="dev_logs_export">Экспорт</string>
+    <string name="dev_logs_filter_app">Приложение</string>
+    <string name="dev_logs_retention">Хранение</string>
+    <string name="dev_logs_retention_1h">1 час</string>
+    <string name="dev_logs_retention_24h">24 часа</string>
+    <string name="dev_logs_retention_7d">7 дней</string>
+
+    <!-- Внешний вид: вибрация, размер текста -->
+    <string name="settings_haptic">Виброотклик</string>
+    <string name="settings_text_scale">Размер текста</string>
+    <string name="text_scale_small">Меньше</string>
+    <string name="text_scale_normal">Обычный</string>
+    <string name="text_scale_large">Больше</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_1_title">LimeFlow</string>
+    <string name="onboarding_1_text">Локальный обход блокировок без VPN-сервера: трафик обрабатывается прямо на телефоне, данные никуда не уходят.</string>
+    <string name="onboarding_2_title">Выберите стратегию</string>
+    <string name="onboarding_2_text">Нажмите на строку стратегии на главном экране, чтобы выбрать готовую или создать свою. Кнопка «Подобрать автоматически» проверит, что работает в вашей сети.</string>
+    <string name="onboarding_3_title">Разрешите работу в фоне</string>
+    <string name="onboarding_3_text">Чтобы LimeFlow не засыпал, разрешите работу без ограничений батареи. Это локальная обработка трафика, не шифрование VPN.</string>
+    <string name="onboarding_next">Дальше</string>
+    <string name="onboarding_done">Готово</string>
+    <string name="onboarding_battery_allow">Разрешить без ограничений</string>
+
+    <!-- Иконка приложения -->
+    <string name="app_icon_title">Иконка приложения</string>
+    <string name="app_icon_summary">Основная, тёмная, монохромная или лаймовая</string>
+    <string name="app_icon_default">Основная</string>
+    <string name="app_icon_dark">Тёмная</string>
+    <string name="app_icon_mono">Монохром</string>
+    <string name="app_icon_lime">Лаймовая</string>
+    <string name="app_icon_applied">Иконка обновится через пару секунд</string>
+
+    <!-- Переключатель движка -->
+    <string name="settings_engine_mode">Движок обхода</string>
+    <string name="settings_engine_byedpi">Наш движок (VPN)</string>
+    <string name="settings_engine_zapret">Запрет (root)</string>
+    <string name="settings_engine_zapret_hint">Выбран Zapret: работает через iptables без VPN, требует root. Стратегия выбирается на экране Zapret Engine — нажмите здесь, чтобы открыть его.</string>
+    <string name="flow_mode_zapret">Zapret</string>
+    <string name="settings_running_note">Движок запущен — переключение движка и режима доступно после отключения. Остальные изменения применятся при следующем подключении.</string>
 </resources>

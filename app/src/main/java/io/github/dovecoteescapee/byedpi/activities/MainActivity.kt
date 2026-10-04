@@ -4,6 +4,7 @@ import android.Manifest
 import android.animation.ValueAnimator
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
+import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -17,6 +18,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import android.view.Menu
@@ -40,12 +42,15 @@ import io.github.dovecoteescapee.byedpi.databinding.DialogAppearanceBinding
 import io.github.dovecoteescapee.byedpi.services.ServiceManager
 import io.github.dovecoteescapee.byedpi.services.appStatus
 import io.github.dovecoteescapee.byedpi.utility.*
+import io.github.dovecoteescapee.byedpi.widget.VpnWidgets
 import com.amurcanov.tgwsproxy.ProxyUiNavigation
 import com.amurcanov.tgwsproxy.SettingsStore
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -62,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var startingLogoAnimator: ObjectAnimator? = null
     private var isStartingVisual = false
     private var lastPowerState: Boolean? = null
+    private var tickerJob: Job? = null
 
     companion object {
         private val TAG: String = MainActivity::class.java.simpleName
@@ -87,7 +93,6 @@ class MainActivity : AppCompatActivity() {
                 updateStatus()
             }
         }
-
     private val logsRegister =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             lifecycleScope.launch(Dispatchers.IO) {
@@ -155,6 +160,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(newBase.withTextScale())
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         ensureUnifiedAppearanceDefaults()
         appliedAppearanceSignature = appearanceSignature()
@@ -189,6 +198,7 @@ class MainActivity : AppCompatActivity() {
             // Ignore taps while a start/stop transition is in flight: a second
             // START would tear down the proxy that is still connecting.
             if (isStartingVisual) return@setOnClickListener
+            maybeHaptic()
             val (status, _) = appStatus
             when (status) {
                 AppStatus.Halted -> {
@@ -222,6 +232,11 @@ class MainActivity : AppCompatActivity() {
         binding.appearanceNav.setOnClickListener { showPalettePicker() }
         binding.settingsNav.setOnClickListener { openSettings() }
         handleProxyUiIntent(intent)
+        handleLimeFlowDeeplink(intent)
+        VpnWidgets.updateAll(this)
+
+        binding.trafficCard.setOnClickListener { startActivity(Intent(this, TrafficStatsActivity::class.java)) }
+        binding.checkConnectionCard.setOnClickListener { runConnectionCheck() }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -231,13 +246,21 @@ class MainActivity : AppCompatActivity() {
         ) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
-        maybePromptBatteryExemption()
+        // The intro covers the battery prompt on first run, so the standalone
+        // dialog only fires for users who skipped onboarding.
+        if (getPreferences().getBoolean(OnboardingActivity.ONBOARDING_DONE_KEY, false)) {
+            maybePromptBatteryExemption()
+        } else {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+        }
+        checkForUpdate()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleProxyUiIntent(intent)
+        handleLimeFlowDeeplink(intent)
     }
 
     private fun handleProxyUiIntent(intent: Intent?) {
@@ -245,6 +268,76 @@ class MainActivity : AppCompatActivity() {
             intent.removeExtra(ProxyUiNavigation.EXTRA_OPEN_PROXY_UI)
             openTgWsProxy()
         }
+    }
+
+    /*
+     * limeflow://connect | disconnect | toggle | status — automation entry
+     * point for Tasker/MacroDroid/HTTP shortcuts; no permission required.
+     */
+    private fun handleLimeFlowDeeplink(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != DEEPLINK_SCHEME) return
+        when (data.host) {
+            "connect" -> {
+                val (status, _) = appStatus
+                if (status == AppStatus.Halted) {
+                    beginStartingAnimation()
+                    start()
+                }
+            }
+
+            "disconnect" -> {
+                val (status, _) = appStatus
+                if (status == AppStatus.Running) stop()
+            }
+
+            "toggle" -> {
+                val (status, _) = appStatus
+                if (status == AppStatus.Running) stop() else {
+                    beginStartingAnimation()
+                    start()
+                }
+            }
+
+            "status" -> {
+                val (status, _) = appStatus
+                Toast.makeText(
+                    this,
+                    if (status == AppStatus.Running) R.string.tile_active else R.string.tile_inactive,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+
+            StrategyShare.HOST -> offerStrategyImport(data.getQueryParameter(StrategyShare.DATA_PARAM))
+        }
+    }
+
+    private fun offerStrategyImport(data: String?) {
+        val imported = StrategyShare.parse(data) ?: run {
+            Toast.makeText(this, R.string.strategy_import_invalid, Toast.LENGTH_SHORT).show()
+            return
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.strategy_import_title, imported.name))
+            .setMessage(R.string.strategy_import_message)
+            .setNegativeButton(R.string.custom_strategy_cancel, null)
+            .setPositiveButton(R.string.strategy_import_apply) { _, _ ->
+                val preferences = getPreferences()
+                val saved = FlowsealProfiles.saveCustom(
+                    preferences,
+                    null,
+                    imported.name,
+                    imported.arguments,
+                )
+                FlowsealProfiles.select(preferences, saved)
+                binding.strategyButtonText.text = getString(
+                    R.string.profile_summary,
+                    saved.name,
+                    saved.method,
+                )
+                Toast.makeText(this, R.string.strategy_import_done, Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
 
     /*
@@ -307,6 +400,99 @@ class MainActivity : AppCompatActivity() {
         }
         updateStatus()
         maybeOfferNetworkStrategy()
+        startDashboardTicker()
+    }
+
+    override fun onPause() {
+        tickerJob?.cancel()
+        tickerJob = null
+        super.onPause()
+    }
+
+    /* Session stats and the engine memory line refresh once a second while
+     * the dashboard is on screen. */
+    private fun maybeHaptic() {
+        if (getPreferences().getBoolean("haptic_feedback", false)) {
+            binding.statusButton.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+        }
+    }
+
+    private fun startDashboardTicker() {
+        if (tickerJob?.isActive == true) return
+        tickerJob = lifecycleScope.launch {
+            while (isActive) {
+                updateTrafficLine()
+                updateMemoryLine()
+                delay(1_000)
+            }
+        }
+    }
+
+    private fun updateTrafficLine() {
+        val snapshot = TrafficStatsStore.snapshot(this)
+        binding.trafficValue.text = getString(
+            R.string.traffic_line_value,
+            formatTraffic(snapshot.todayTx + snapshot.todayRx),
+            formatTraffic(snapshot.totalTx + snapshot.totalRx),
+        )
+    }
+
+    private fun updateMemoryLine() {
+        val enabled = getPreferences().getBoolean("show_engine_memory", false)
+        val running = appStatus.first == AppStatus.Running
+        if (!enabled || !running) {
+            binding.memoryValue.visibility = View.GONE
+            return
+        }
+        val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
+        val pssMb = manager
+            ?.getProcessMemoryInfo(intArrayOf(Process.myPid()))
+            ?.firstOrNull()
+            ?.totalPss
+            ?.takeIf { it > 0 } ?: run {
+            binding.memoryValue.visibility = View.GONE
+            return
+        }
+        val (label, color) = when {
+            pssMb < 150 -> R.string.memory_level_ok to R.color.lime_connected
+            pssMb < 300 -> R.string.memory_level_elevated to android.R.color.holo_orange_light
+            else -> R.string.memory_level_high to R.color.app_error
+        }
+        binding.memoryValue.visibility = View.VISIBLE
+        binding.memoryValue.text = getString(R.string.memory_line, pssMb, getString(label))
+        binding.memoryValue.setTextColor(ContextCompat.getColor(this, color))
+    }
+
+    private fun runConnectionCheck() {
+        binding.checkResult.setText(R.string.check_running)
+        lifecycleScope.launch {
+            val result = ConnectionTester.test(this@MainActivity)
+            binding.checkResult.text = when (result) {
+                is ConnectionTester.Result.Reachable ->
+                    getString(R.string.check_ok, result.latencyMs)
+                is ConnectionTester.Result.CaptivePortal ->
+                    getString(R.string.check_captive, result.latencyMs)
+                ConnectionTester.Result.Unreachable -> getString(R.string.check_unreachable)
+                ConnectionTester.Result.NoNetwork -> getString(R.string.check_no_network)
+            }
+        }
+    }
+
+    private fun checkForUpdate() {
+        lifecycleScope.launch {
+            val release = runCatching { AppUpdateChecker.checkIfDue(this@MainActivity) }.getOrNull()
+                ?: return@launch
+            MaterialAlertDialogBuilder(this@MainActivity)
+                .setTitle(getString(R.string.update_available_title, release.version))
+                .setMessage(R.string.update_available_message)
+                .setNegativeButton(R.string.update_later, null)
+                .setPositiveButton(R.string.update_download) { _, _ ->
+                    runCatching {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.apkUrl)))
+                    }
+                }
+                .show()
+        }
     }
 
     private fun appearanceSignature(): String = getPreferences().run {
@@ -335,6 +521,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun maybeOfferNetworkStrategy() {
         val preferences = getPreferences()
+        // With automatic switching on, the service applies the remembered
+        // strategy itself; the manual dialog would only fight with it.
+        if (preferences.getBoolean("auto_switch_network", false)) return
+        // Per-network strategies are a byedpi feature.
+        if (ServiceManager.isZapretEngine(this)) return
         val type = if (StrategyMemory.onWifi(this)) "wifi" else "mobile"
         val last = preferences.getString(StrategyMemory.NETWORK_HINT_KEY, null)
         if (last == null) {
@@ -623,6 +814,7 @@ class MainActivity : AppCompatActivity() {
             appearance.paletteIndigo to "indigo",
             appearance.paletteForest to "forest",
             appearance.paletteEspresso to "espresso",
+            appearance.paletteAmoled to "amoled",
         )
         paletteCards.forEach { (card, value) ->
             card.strokeWidth = if (selectedPalette == value) {
@@ -631,6 +823,12 @@ class MainActivity : AppCompatActivity() {
                 0
             }
             card.setOnClickListener {
+                // AMOLED only makes sense with the dark base theme: switching
+                // to it forces dark mode as well.
+                if (value == "amoled") {
+                    preferences.edit().putString("app_theme", "dark").apply()
+                    AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+                }
                 preferences.edit()
                     .putBoolean("app_dynamic_colors", false)
                     .putString("app_palette", value)
@@ -638,7 +836,34 @@ class MainActivity : AppCompatActivity() {
                 restartAfterAppearanceChange(dialog) {
                     appearanceStore.saveDynamicColor(false)
                     appearanceStore.saveThemePalette(value)
+                    if (value == "amoled") appearanceStore.saveThemeMode("dark")
                 }
+            }
+        }
+
+        // Vibration feedback and text size live in the same appearance hub.
+        appearance.appearanceHaptic.isChecked = preferences.getBoolean("haptic_feedback", false)
+        appearance.appearanceHaptic.setOnCheckedChangeListener { _, checked ->
+            preferences.edit().putBoolean("haptic_feedback", checked).apply()
+        }
+        val selectedScale = preferences.getString("text_scale", "normal") ?: "normal"
+        appearance.textScaleGroup.check(
+            when (selectedScale) {
+                "large" -> R.id.text_large
+                "small" -> R.id.text_small
+                else -> R.id.text_normal
+            }
+        )
+        appearance.textScaleGroup.addOnButtonCheckedListener { _, _, checked ->
+            if (!checked) return@addOnButtonCheckedListener
+            val scale = when (appearance.textScaleGroup.checkedButtonId) {
+                R.id.text_large -> "large"
+                R.id.text_small -> "small"
+                else -> "normal"
+            }
+            if (scale != selectedScale) {
+                preferences.edit().putString("text_scale", scale).apply()
+                restartAfterAppearanceChange(dialog) { }
             }
         }
         dialog.show()
@@ -659,12 +884,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openSettings() {
-        val (status, _) = appStatus
-        if (status == AppStatus.Halted) {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        } else {
-            Toast.makeText(this, R.string.settings_unavailable, Toast.LENGTH_SHORT).show()
-        }
+        // Settings are readable while connected; edits apply on reconnect and
+        // the risky toggles are disabled inside Settings while running.
+        startActivity(Intent(this, SettingsActivity::class.java))
     }
 
     private fun applyStoredTheme() {
@@ -699,13 +921,8 @@ class MainActivity : AppCompatActivity() {
 
         return when (item.itemId) {
             R.id.action_settings -> {
-                if (status == AppStatus.Halted) {
-                    val intent = Intent(this, SettingsActivity::class.java)
-                    startActivity(intent)
-                } else {
-                    Toast.makeText(this, R.string.settings_unavailable, Toast.LENGTH_SHORT)
-                        .show()
-                }
+                val intent = Intent(this, SettingsActivity::class.java)
+                startActivity(intent)
                 true
             }
 
@@ -727,13 +944,38 @@ class MainActivity : AppCompatActivity() {
 
     private fun start() {
         val preferences = getPreferences()
-        StrategyMemory.rememberForCurrentNetwork(
-            this,
-            preferences,
-            FlowsealProfiles.selected(preferences).id,
-        )
-        when (preferences.mode()) {
+        when (ServiceManager.engineMode(this)) {
+            Mode.Zapret -> lifecycleScope.launch {
+                // su may be missing entirely; ask once and explain instead of
+                // failing inside the service.
+                val hasRoot = withContext(Dispatchers.IO) {
+                    io.github.dovecoteescapee.byedpi.zapret.ZapretEngineService.hasRoot()
+                }
+                if (hasRoot) {
+                    ServiceManager.start(this@MainActivity, Mode.Zapret)
+                    updateStatus()
+                } else {
+                    // A stuck zapret selection must not leave the user with a
+                    // permanently failing button: fall back to our engine.
+                    preferences.edit()
+                        .putString(ServiceManager.ENGINE_MODE_KEY, ServiceManager.ENGINE_BYEDPI)
+                        .apply()
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.zapret_root_missing,
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    updateDashboardInfo()
+                    start()
+                }
+            }
+
             Mode.VPN -> {
+                StrategyMemory.rememberForCurrentNetwork(
+                    this,
+                    preferences,
+                    FlowsealProfiles.selected(preferences).id,
+                )
                 val intentPrepare = VpnService.prepare(this)
                 if (intentPrepare != null) {
                     vpnRegister.launch(intentPrepare)
@@ -742,7 +984,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            Mode.Proxy -> ServiceManager.start(this, Mode.Proxy)
+            Mode.Proxy -> {
+                StrategyMemory.rememberForCurrentNetwork(
+                    this,
+                    preferences,
+                    FlowsealProfiles.selected(preferences).id,
+                )
+                ServiceManager.start(this, Mode.Proxy)
+            }
         }
     }
 
@@ -764,15 +1013,24 @@ class MainActivity : AppCompatActivity() {
 
         when (status) {
             AppStatus.Halted -> {
-                when (preferences.mode()) {
-                    Mode.VPN -> {
-                        binding.statusText.setText(R.string.vpn_disconnected)
-                        binding.statusButton.setText(R.string.vpn_connect)
+                when (ServiceManager.engineMode(this)) {
+                    Mode.Zapret -> {
+                        binding.statusText.setText(R.string.zapret_state_halted)
+                        binding.statusButton.setText(R.string.zapret_start)
                     }
 
-                    Mode.Proxy -> {
-                        binding.statusText.setText(R.string.proxy_down)
-                        binding.statusButton.setText(R.string.proxy_start)
+                    else -> when (preferences.mode()) {
+                        Mode.VPN -> {
+                            binding.statusText.setText(R.string.vpn_disconnected)
+                            binding.statusButton.setText(R.string.vpn_connect)
+                        }
+
+                        Mode.Proxy -> {
+                            binding.statusText.setText(R.string.proxy_down)
+                            binding.statusButton.setText(R.string.proxy_start)
+                        }
+
+                        Mode.Zapret -> Unit
                     }
                 }
                 binding.statusButton.isEnabled = true
@@ -789,6 +1047,11 @@ class MainActivity : AppCompatActivity() {
                         binding.statusText.setText(R.string.proxy_up)
                         binding.statusButton.setText(R.string.proxy_stop)
                     }
+
+                    Mode.Zapret -> {
+                        binding.statusText.setText(R.string.zapret_state_running)
+                        binding.statusButton.setText(R.string.zapret_stop)
+                    }
                 }
                 binding.statusButton.isEnabled = true
             }
@@ -798,9 +1061,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDashboardInfo() {
         val preferences = getPreferences()
+        val engineZapret = ServiceManager.isZapretEngine(this)
         val mode = preferences.mode()
         binding.flowModeValue.setText(
-            if (mode == Mode.VPN) R.string.flow_mode_vpn else R.string.flow_mode_local
+            when {
+                engineZapret -> R.string.flow_mode_zapret
+                mode == Mode.VPN -> R.string.flow_mode_vpn
+                else -> R.string.flow_mode_local
+            }
         )
 
         val filterMode = preferences.getString(

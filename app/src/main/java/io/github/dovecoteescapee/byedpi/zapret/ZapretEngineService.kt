@@ -61,7 +61,12 @@ class ZapretEngineService : LifecycleService() {
             )
         }
 
-        fun hasRoot(): Boolean = runCatching {
+        // Cached for the session: every silent start/tile/widget path may ask,
+        // and a su prompt must not pop up more than once per run.
+        @Volatile
+        private var rootAvailable: Boolean? = null
+
+        fun hasRoot(): Boolean = rootAvailable ?: runCatching {
             val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             // A pending su prompt or a wedged su binary must not hang the caller.
             if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -69,8 +74,8 @@ class ZapretEngineService : LifecycleService() {
                 return false
             }
             val output = process.inputStream.bufferedReader().use { it.readText() }
-            output.contains("uid=0")
-        }.getOrDefault(false)
+            (output.contains("uid=0")).also { rootAvailable = it }
+        }.getOrDefault(false).also { rootAvailable = it }
     }
 
     enum class ZapretState { Halted, Running, Failed }
@@ -132,6 +137,16 @@ class ZapretEngineService : LifecycleService() {
         }
         _state.value = ZapretState.Halted
         _statusText.value = getString(R.string.zapret_preparing)
+
+        // Without su the whole mode is impossible; fail fast with a clear
+        // status instead of a stack trace from Runtime.exec.
+        if (!withContext(Dispatchers.IO) { hasRoot() }) {
+            Log.i(TAG, "Start refused: no root on device")
+            _statusText.value = getString(R.string.zapret_root_missing)
+            publish(ZapretState.Failed)
+            stopSelf()
+            return
+        }
 
         try {
             withContext(Dispatchers.IO) {

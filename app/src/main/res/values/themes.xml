@@ -63,4 +63,17 @@
         <item name="android:textColorPrimary">#FF1C1B1A</item>
         <item name="android:textColorSecondary">#FF5D4037</item>
     </style>
+
+    <!-- Pure black surfaces; applying it also forces the dark base theme, so
+         both branches below stay dark regardless of the system mode. -->
+    <style name="ThemeOverlay.LimeFlow.Amoled">
+        <item name="colorPrimary">#64A8FF</item>
+        <item name="colorPrimaryVariant">#2D7DE5</item>
+        <item name="colorSecondary">#8AC0FF</item>
+        <item name="colorOnPrimary">#062D61</item>
+        <item name="colorSurface">#FF000000</item>
+        <item name="android:colorBackground">#FF000000</item>
+        <item name="android:textColorPrimary">#FFF4F8FF</item>
+        <item name="android:textColorSecondary">#FFA6B8D0</item>
+    </style>
 </resources>

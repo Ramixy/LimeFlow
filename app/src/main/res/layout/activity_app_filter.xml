@@ -20,7 +20,7 @@
             android:layout_height="48dp"
             android:minWidth="0dp"
             android:text="@string/back_symbol"
-            android:textColor="@color/app_text"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="30sp"
             app:backgroundTint="@android:color/transparent" />
 
@@ -30,7 +30,7 @@
             android:layout_marginStart="6dp"
             android:layout_weight="1"
             android:text="@string/app_filter_title"
-            android:textColor="@color/app_text"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="24sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -39,9 +39,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        app:cardBackgroundColor="@color/app_surface"
+        app:cardBackgroundColor="?attr/colorSurface"
         app:cardCornerRadius="24dp"
-        app:strokeColor="@color/app_stroke"
+        app:strokeColor="?attr/colorControlHighlight"
         app:strokeWidth="1dp">
 
         <RadioGroup
@@ -55,21 +55,21 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/app_filter_all"
-                android:textColor="@color/app_text" />
+                android:textColor="?android:attr/textColorPrimary" />
 
             <RadioButton
                 android:id="@+id/filter_exclude"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/app_filter_exclude"
-                android:textColor="@color/app_text" />
+                android:textColor="?android:attr/textColorPrimary" />
 
             <RadioButton
                 android:id="@+id/filter_include"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/app_filter_include"
-                android:textColor="@color/app_text" />
+                android:textColor="?android:attr/textColorPrimary" />
         </RadioGroup>
     </com.google.android.material.card.MaterialCardView>
 
@@ -78,7 +78,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         android:hint="@string/app_filter_search"
-        app:boxBackgroundColor="@color/app_surface"
+        app:boxBackgroundColor="?attr/colorSurface"
         app:boxCornerRadiusBottomEnd="20dp"
         app:boxCornerRadiusBottomStart="20dp"
         app:boxCornerRadiusTopEnd="20dp"
@@ -91,7 +91,7 @@
             android:layout_height="wrap_content"
             android:inputType="text"
             android:maxLines="1"
-            android:textColor="@color/app_text" />
+            android:textColor="?android:attr/textColorPrimary" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textview.MaterialTextView
@@ -99,7 +99,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingVertical="10dp"
-        android:textColor="@color/app_text_muted"
+        android:textColor="?android:attr/textColorSecondary"
         android:textSize="13sp" />
 
     <androidx.recyclerview.widget.RecyclerView

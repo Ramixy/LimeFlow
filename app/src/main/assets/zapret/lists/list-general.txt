@@ -1,11 +1,3 @@
-^dns.google
-^dns.quad9.net
-^dns.nextdns.io
-^doh.opendns.com
-^doh.cleanbrowsing.org
-^freedns.controld.com
-^wikimedia-dns.org
-^cloudflare-dns.com
 cloudflare-ech.com
 encryptedsni.com
 cloudflareaccess.com
@@ -48,7 +40,6 @@ discordpartygames.com
 discordsays.com
 discordsez.com
 discordstatus.com
-zendesk.com
 frankerfacez.com
 ffzap.com
 betterttv.net

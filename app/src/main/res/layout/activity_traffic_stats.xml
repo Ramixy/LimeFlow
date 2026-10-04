@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_limeflow"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="34dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/stats_back"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:text="@string/back_symbol"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="30sp"
+            app:backgroundTint="@android:color/transparent" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <com.google.android.material.textview.MaterialTextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/traffic_stats_title"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="25sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.textview.MaterialTextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/traffic_stats_subtitle"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="20dp"
+            android:paddingBottom="32dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="?attr/colorSurface"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorControlHighlight"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/traffic_period_session"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/stats_session"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="@string/traffic_period_today"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/stats_today"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="@string/traffic_period_week"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/stats_week"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="@string/traffic_period_total"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/stats_total"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:textColor="?android:attr/textColorPrimary"
+                        android:textSize="15sp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/traffic_stats_note"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/stats_reset"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:layout_marginTop="16dp"
+                android:text="@string/traffic_stats_reset"
+                android:textAllCaps="false"
+                app:cornerRadius="18dp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

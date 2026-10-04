@@ -7,16 +7,19 @@ enum class AppStatus {
 
 enum class Mode {
     Proxy,
-    VPN;
+    VPN,
+    Zapret;
 
     companion object {
         fun fromSender(sender: Sender): Mode = when (sender) {
             Sender.Proxy -> Proxy
             Sender.VPN -> VPN
+            Sender.Zapret -> Zapret
         }
 
         fun fromString(name: String): Mode = when (name) {
             "proxy" -> Proxy
+            "zapret" -> Zapret
             // A corrupted/imported preference must not crash the app at startup.
             else -> VPN
         }

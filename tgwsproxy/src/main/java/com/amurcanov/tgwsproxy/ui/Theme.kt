@@ -227,9 +227,22 @@ private val LimeFlowDarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF263C59),
 )
 
+// Pure black companion of the LimeFlow dark palette, selected by the shared
+// "amoled" palette value (LimeFlow forces the dark theme with it).
+private val LimeFlowAmoledColorScheme = LimeFlowDarkColorScheme.copy(
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFF4F8FF),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFF4F8FF),
+    surfaceVariant = Color(0xFF0F1720),
+    onSurfaceVariant = Color(0xFFA6B8D0),
+    outlineVariant = Color(0xFF1E2A38),
+)
+
 private fun getAppColorScheme(palette: String, isDark: Boolean): androidx.compose.material3.ColorScheme {
     return when(palette) {
         "limeflow" -> if (isDark) LimeFlowDarkColorScheme else LimeFlowLightColorScheme
+        "amoled" -> LimeFlowAmoledColorScheme
         "espresso" -> if (isDark) DarkColorScheme else LightColorScheme
         "forest" -> if (isDark) ForestDarkColorScheme else ForestLightColorScheme
         else -> if (isDark) IndigoDarkColorScheme else IndigoLightColorScheme

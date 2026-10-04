@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="app.alt11.mobile.permission.CONTROL" />
+
+    <!-- Signature-level gate for the exported ControlReceiver: only apps signed
+         with the same key may drive LimeFlow through broadcasts. -->
+    <permission
+        android:name="app.alt11.mobile.permission.CONTROL"
+        android:protectionLevel="signature" />
     <uses-feature android:name="android.software.leanback"
         android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen"
@@ -31,19 +39,91 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.LimeFlow"
+        android:enableOnBackInvokedCallback="true"
         tools:targetApi="34">
         <activity
             android:name=".activities.MainActivity"
             android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
                 <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
+            <!-- limeflow://connect | disconnect | toggle | status — automation
+                 entry point for Tasker/MacroDroid/HTTP shortcuts. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
 
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="limeflow" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!-- Launcher icon variants (P2 icon picker): exactly one alias stays
+             enabled, AppIcon.apply() swaps them at runtime. -->
+        <activity-alias
+            android:name=".activities.MainActivityDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name"
+            android:targetActivity=".activities.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".activities.MainActivityDark"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_dark"
+            android:roundIcon="@mipmap/ic_launcher_dark"
+            android:label="@string/app_name"
+            android:targetActivity=".activities.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".activities.MainActivityMono"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_mono"
+            android:roundIcon="@mipmap/ic_launcher_mono"
+            android:label="@string/app_name"
+            android:targetActivity=".activities.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".activities.MainActivityLime"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_lime"
+            android:roundIcon="@mipmap/ic_launcher_lime"
+            android:label="@string/app_name"
+            android:targetActivity=".activities.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".activities.ProfilePickerActivity"
@@ -74,6 +154,82 @@
         <activity
             android:name=".activities.ZapretEngineActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".activities.ShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <activity
+            android:name=".activities.OnboardingActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".activities.UrlSchemesActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".activities.TrafficStatsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".activities.StrategyShareActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".activities.DevLogsActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Exported on purpose: automation entry point, gated by the
+             signature-level CONTROL permission. -->
+        <receiver
+            android:name=".receiver.ControlReceiver"
+            android:exported="true"
+            android:permission="app.alt11.mobile.permission.CONTROL">
+            <intent-filter>
+                <action android:name="app.alt11.mobile.CONNECT" />
+                <action android:name="app.alt11.mobile.DISCONNECT" />
+                <action android:name="app.alt11.mobile.TOGGLE" />
+                <action android:name="app.alt11.mobile.STATUS" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".widget.VpnWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_1x1_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="io.github.dovecoteescapee.byedpi.WIDGET_TOGGLE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vpn_1x1_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.VpnWidget2x2Receiver"
+            android:exported="false"
+            android:label="@string/widget_2x2_description">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="io.github.dovecoteescapee.byedpi.WIDGET_TOGGLE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vpn_2x2_info" />
+        </receiver>
 
         <service
             android:name=".zapret.ZapretEngineService"

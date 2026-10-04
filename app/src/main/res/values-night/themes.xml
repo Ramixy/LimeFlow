@@ -57,4 +57,15 @@
         <item name="android:textColorPrimary">#EDE0D4</item>
         <item name="android:textColorSecondary">#D7CCC8</item>
     </style>
+
+<style name="ThemeOverlay.LimeFlow.Amoled">
+    <item name="colorPrimary">#64A8FF</item>
+    <item name="colorPrimaryVariant">#2D7DE5</item>
+    <item name="colorSecondary">#8AC0FF</item>
+    <item name="colorOnPrimary">#062D61</item>
+    <item name="colorSurface">#FF000000</item>
+    <item name="android:colorBackground">#FF000000</item>
+    <item name="android:textColorPrimary">#FFF4F8FF</item>
+    <item name="android:textColorSecondary">#FFA6B8D0</item>
+</style>
 </resources>

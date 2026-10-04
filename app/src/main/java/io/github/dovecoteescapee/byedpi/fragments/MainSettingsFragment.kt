@@ -109,6 +109,12 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
                 dns.isVisible = false
                 ipv6.isVisible = false
             }
+
+            // The zapret engine has no byedpi tunnel preferences.
+            Mode.Zapret -> {
+                dns.isVisible = false
+                ipv6.isVisible = false
+            }
         }
     }
 }

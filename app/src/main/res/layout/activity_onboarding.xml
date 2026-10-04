@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_limeflow"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="28dp">
+
+    <LinearLayout
+        android:id="@+id/onboarding_page_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/onboarding_page_1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <ImageView
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/ic_limeflow_logo"
+                app:tint="?attr/colorPrimary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="@string/onboarding_1_title"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:text="@string/onboarding_1_text"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/onboarding_page_2"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:contentDescription="@string/choose_strategy"
+                android:src="@drawable/ic_hosts"
+                app:tint="?attr/colorPrimary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="@string/onboarding_2_title"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:text="@string/onboarding_2_text"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/onboarding_page_3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="96dp"
+                android:layout_height="96dp"
+                android:contentDescription="@string/battery_prompt_title"
+                android:src="@drawable/ic_settings_lime"
+                app:tint="?attr/colorPrimary" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="@string/onboarding_3_title"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center"
+                android:text="@string/onboarding_3_text"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="22dp"
+        android:orientation="horizontal">
+
+        <View
+            android:id="@+id/dot_1"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@drawable/bg_chip_idle" />
+
+        <View
+            android:id="@+id/dot_2"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_chip_idle" />
+
+        <View
+            android:id="@+id/dot_3"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_chip_idle" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/onboarding_next"
+        android:layout_width="match_parent"
+        android:layout_height="54dp"
+        android:text="@string/onboarding_next"
+        android:textAllCaps="false"
+        app:cornerRadius="22dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/onboarding_battery"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="54dp"
+        android:layout_marginTop="8dp"
+        android:text="@string/onboarding_battery_allow"
+        android:textAllCaps="false"
+        android:visibility="gone"
+        app:cornerRadius="22dp" />
+</LinearLayout>

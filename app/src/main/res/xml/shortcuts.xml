@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="connect"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_connect_short"
+        android:shortcutLongLabel="@string/shortcut_connect_long">
+        <intent
+            android:action="app.alt11.mobile.CONNECT"
+            android:targetPackage="io.github.dovecoteescapee.byedpi"
+            android:targetClass="io.github.dovecoteescapee.byedpi.activities.ShortcutActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="disconnect"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_disconnect_short"
+        android:shortcutLongLabel="@string/shortcut_disconnect_long">
+        <intent
+            android:action="app.alt11.mobile.DISCONNECT"
+            android:targetPackage="io.github.dovecoteescapee.byedpi"
+            android:targetClass="io.github.dovecoteescapee.byedpi.activities.ShortcutActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="toggle"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/shortcut_toggle_short"
+        android:shortcutLongLabel="@string/shortcut_toggle_long">
+        <intent
+            android:action="app.alt11.mobile.TOGGLE"
+            android:targetPackage="io.github.dovecoteescapee.byedpi"
+            android:targetClass="io.github.dovecoteescapee.byedpi.activities.ShortcutActivity" />
+    </shortcut>
+
+    <!-- Assistant (App Actions) voice intents: "Ok Google, включи/выключи LimeFlow". -->
+    <capability android:name="app.alt11.mobile.VOICE_CONNECT">
+        <intent
+            android:action="app.alt11.mobile.VOICE_CONNECT"
+            android:targetPackage="io.github.dovecoteescapee.byedpi"
+            android:targetClass="io.github.dovecoteescapee.byedpi.activities.ShortcutActivity" />
+    </capability>
+
+    <capability android:name="app.alt11.mobile.VOICE_DISCONNECT">
+        <intent
+            android:action="app.alt11.mobile.VOICE_DISCONNECT"
+            android:targetPackage="io.github.dovecoteescapee.byedpi"
+            android:targetClass="io.github.dovecoteescapee.byedpi.activities.ShortcutActivity" />
+    </capability>
+
+    <capability android:name="app.alt11.mobile.VOICE_TOGGLE">
+        <intent
+            android:action="app.alt11.mobile.VOICE_TOGGLE"
+            android:targetPackage="io.github.dovecoteescapee.byedpi"
+            android:targetClass="io.github.dovecoteescapee.byedpi.activities.ShortcutActivity" />
+    </capability>
+</shortcuts>

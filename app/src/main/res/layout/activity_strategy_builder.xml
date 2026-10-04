@@ -22,7 +22,7 @@
             android:contentDescription="@string/back_symbol"
             android:padding="12dp"
             android:src="@drawable/ic_arrow_back_lime"
-            app:tint="@color/app_text" />
+            app:tint="?android:attr/textColorPrimary" />
 
         <TextView
             android:layout_width="0dp"
@@ -30,7 +30,7 @@
             android:layout_marginStart="8dp"
             android:layout_weight="1"
             android:text="@string/strategy_builder_title"
-            android:textColor="@color/app_text"
+            android:textColor="?android:attr/textColorPrimary"
             android:textSize="24sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -54,7 +54,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/strategy_builder_subtitle"
-                android:textColor="@color/app_text_muted"
+                android:textColor="?android:attr/textColorSecondary"
                 android:textSize="14sp" />
 
             <com.google.android.material.textfield.TextInputLayout
@@ -81,10 +81,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="14dp"
-                app:cardBackgroundColor="@color/app_surface"
+                app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="24dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -97,7 +97,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/strategy_builder_main_method"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -150,7 +150,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="22dp"
                         android:text="@string/strategy_builder_secondary_method"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -204,10 +204,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardBackgroundColor="@color/app_surface"
+                app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="24dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -220,7 +220,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/strategy_builder_targeting"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -229,7 +229,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="3dp"
                         android:text="@string/strategy_builder_targeting_hint"
-                        android:textColor="@color/app_text_muted"
+                        android:textColor="?android:attr/textColorSecondary"
                         android:textSize="12sp" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
@@ -238,28 +238,28 @@
                         android:layout_height="48dp"
                         android:layout_marginTop="6dp"
                         android:text="@string/strategy_protocol_tls"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/builder_protocol_http"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:text="@string/strategy_protocol_http"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/builder_protocol_udp"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:text="@string/strategy_protocol_udp"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/builder_protocol_ipv4"
                         android:layout_width="match_parent"
                         android:layout_height="48dp"
                         android:text="@string/strategy_protocol_ipv4"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/builder_host_scope_layout"
@@ -336,7 +336,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="50dp"
                         android:text="@string/strategy_builder_tcp_fast_open"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -344,10 +344,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardBackgroundColor="@color/app_surface"
+                app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="24dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -360,7 +360,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/strategy_builder_options"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textSize="16sp"
                         android:textStyle="bold" />
 
@@ -370,7 +370,7 @@
                         android:layout_height="52dp"
                         android:layout_marginTop="6dp"
                         android:text="@string/strategy_builder_tls_record"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/builder_tls_position_layout"
@@ -391,21 +391,21 @@
                         android:layout_width="match_parent"
                         android:layout_height="50dp"
                         android:text="@string/byedpi_host_mixed_case_setting"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/builder_domain_mixed_case"
                         android:layout_width="match_parent"
                         android:layout_height="50dp"
                         android:text="@string/byedpi_domain_mixed_case_setting"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
                         android:id="@+id/builder_remove_spaces"
                         android:layout_width="match_parent"
                         android:layout_height="50dp"
                         android:text="@string/byedpi_host_remove_spaces_setting"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -489,7 +489,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:text="@string/strategy_builder_udp_junk_hint"
-                        android:textColor="@color/app_text_muted"
+                        android:textColor="?android:attr/textColorSecondary"
                         android:textSize="12sp" />
 
                     <LinearLayout
@@ -569,14 +569,14 @@
                         android:layout_height="wrap_content"
                         android:minHeight="50dp"
                         android:text="@string/strategy_builder_randomize_fake"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="4dp"
                         android:text="@string/strategy_builder_randomize_fake_hint"
-                        android:textColor="@color/app_text_muted"
+                        android:textColor="?android:attr/textColorSecondary"
                         android:textSize="12sp" />
 
                     <com.google.android.material.switchmaterial.SwitchMaterial
@@ -585,7 +585,7 @@
                         android:layout_height="wrap_content"
                         android:minHeight="50dp"
                         android:text="@string/strategy_builder_drop_sack"
-                        android:textColor="@color/app_text" />
+                        android:textColor="?android:attr/textColorPrimary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -611,10 +611,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardBackgroundColor="@color/app_surface"
+                app:cardBackgroundColor="?attr/colorSurface"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
-                app:strokeColor="@color/app_stroke"
+                app:strokeColor="?attr/colorControlHighlight"
                 app:strokeWidth="1dp">
 
                 <LinearLayout
@@ -636,7 +636,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:fontFamily="monospace"
-                        android:textColor="@color/app_text"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:textIsSelectable="true"
                         android:textSize="13sp" />
                 </LinearLayout>

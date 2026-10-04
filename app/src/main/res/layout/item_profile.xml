@@ -8,10 +8,10 @@
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
-    app:cardBackgroundColor="@color/app_surface"
+    app:cardBackgroundColor="?attr/colorSurface"
     app:cardCornerRadius="12dp"
     app:cardElevation="0dp"
-    app:strokeColor="@color/app_stroke"
+    app:strokeColor="?attr/colorControlHighlight"
     app:strokeWidth="1dp">
 
     <LinearLayout
@@ -34,7 +34,7 @@
                 android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
-                android:textColor="@color/app_text"
+                android:textColor="?android:attr/textColorPrimary"
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
@@ -59,7 +59,7 @@
                 android:contentDescription="@string/pin_strategy"
                 android:padding="6dp"
                 android:src="@drawable/ic_star"
-                app:tint="@color/app_text_muted" />
+                app:tint="?android:attr/textColorSecondary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/profile_test_single"
@@ -94,7 +94,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="1"
-            android:textColor="@color/app_text_muted"
+            android:textColor="?android:attr/textColorSecondary"
             android:textSize="11sp" />
 
         <LinearLayout
@@ -117,7 +117,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
-                android:textColor="@color/app_text"
+                android:textColor="?android:attr/textColorPrimary"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
@@ -133,7 +133,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
-                android:textColor="@color/app_text"
+                android:textColor="?android:attr/textColorPrimary"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
@@ -213,7 +213,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textColor="@color/app_text_muted"
+            android:textColor="?android:attr/textColorSecondary"
             android:textIsSelectable="true"
             android:textSize="10sp"
             android:visibility="gone" />

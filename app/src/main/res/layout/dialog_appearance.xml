@@ -150,6 +150,77 @@
                 app:cardCornerRadius="24dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/white" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/palette_amoled"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="22dp"
+                android:clickable="true"
+                android:focusable="true"
+                app:cardBackgroundColor="#000000"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/white" />
         </LinearLayout>
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginVertical="14dp"
+        android:background="?attr/colorControlHighlight" />
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/appearance_haptic"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="@string/settings_haptic"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="15sp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/settings_text_scale"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/text_scale_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        app:selectionRequired="true"
+        app:singleSelection="true">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/text_small"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:text="@string/text_scale_small"
+            android:textAllCaps="false" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/text_normal"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:text="@string/text_scale_normal"
+            android:textAllCaps="false" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/text_large"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="42dp"
+            android:layout_weight="1"
+            android:text="@string/text_scale_large"
+            android:textAllCaps="false" />
+    </com.google.android.material.button.MaterialButtonToggleGroup>
 </LinearLayout>
