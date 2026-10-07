@@ -51,15 +51,13 @@ object ProxyController {
                     appendDc(-203, settingsStore.dc203m.first())
                 }
             } else {
-                // Windows parity: the desktop client always knows the Telegram
-                // DC IPs, so when every Cloudflare worker answers 503 the
-                // engine falls back to direct MTProto instead of timing out.
-                appendDc(1, "149.154.175.50")
-                appendDc(2, "149.154.167.51")
-                appendDc(3, "149.154.175.100")
-                appendDc(4, "149.154.167.91")
-                appendDc(5, "149.154.171.5")
-                appendDc(203, "91.105.192.100")
+                // Windows parity (TgWsProxy desktop defaults): Telegram's WS
+                // gateway only answers on 149.154.167.220 (DC2/DC4). Other DCs
+                // are not mapped so they go straight to CF / direct TCP
+                // fallback instead of burning ~10s on a WS attempt that always
+                // fails ("все попытки WS провалены").
+                appendDc(2, "149.154.167.220")
+                appendDc(4, "149.154.167.220")
             }
         }.joinToString(",")
 

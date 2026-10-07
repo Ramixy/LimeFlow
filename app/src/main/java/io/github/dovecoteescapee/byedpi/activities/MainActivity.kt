@@ -126,6 +126,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    private val startWatchdog = Runnable {
+        if (isStartingVisual) updateStatus()
+    }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             AppLog.d(TAG, "Received intent: ${intent?.action}")
@@ -205,6 +209,8 @@ class MainActivity : AppCompatActivity() {
                 AppStatus.Halted -> {
                     beginStartingAnimation()
                     start()
+                    binding.statusButton.removeCallbacks(startWatchdog)
+                    binding.statusButton.postDelayed(startWatchdog, 12_000L)
                 }
                 AppStatus.Running -> stop()
             }

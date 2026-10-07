@@ -27,3 +27,5 @@ outputs/
 local-secrets.properties
 gradle-build.log
 tgwsproxy/build/
+tgwsproxy/upstream-native/target/
+

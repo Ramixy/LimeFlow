@@ -56,7 +56,6 @@ pub fn ws_domains(dc: i32, is_media: bool) -> Vec<String> {
     } else {
         vec![
             format!("kws{}.web.telegram.org", effective_dc),
-            format!("kws{}-1.web.telegram.org", effective_dc),
         ]
     }
 }
@@ -318,111 +317,73 @@ pub async fn bridge_ws(
     cancel_token: CancellationToken,
 ) {
     let ws = Arc::new(ws);
-    let last_activity = Arc::new(Mutex::new(std::time::Instant::now()));
-    let cancel = Arc::new(tokio::sync::Notify::new());
+    // Per-session token: cancelling it reliably stops every sub-task
+    // (Notify::notify_waiters lost wakeups when a task was mid-write).
+    let session = cancel_token.child_token();
 
     let (mut conn_read, mut conn_write) = conn.into_split();
 
-    // ping keepalive
-    let ws_ping = ws.clone();
-    let la_ping = last_activity.clone();
-    let cancel_ping = cancel.clone();
-    let cancel_token_ping = cancel_token.clone();
-    let ping_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(BRIDGE_PING_INTERVAL);
-        interval.tick().await;
-        loop {
-            tokio::select! {
-                _ = cancel_token_ping.cancelled() => return,
-                _ = cancel_ping.notified() => return,
-                _ = interval.tick() => {
-                    let idle = la_ping.lock().await.elapsed();
-                    if idle > BRIDGE_PING_INTERVAL {
-                        if ws_ping.send_ping().await.is_err() {
-                            cancel_ping.notify_waiters();
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // up: client -> ws
+    // up: client -> ws (no idle timeout: Telegram keeps sockets idle for minutes)
     let ws_up = ws.clone();
-    let la_up = last_activity.clone();
-    let cancel_up = cancel.clone();
-    let cancel_token_up = cancel_token.clone();
+    let sess_up = session.clone();
     let up_task = tokio::spawn(async move {
         let mut buf = vec![0u8; WS_BRIDGE_CHUNK_SIZE];
         loop {
             let read_res = tokio::select! {
-                _ = cancel_token_up.cancelled() => break,
-                _ = cancel_up.notified() => break,
-                r = tokio::time::timeout(BRIDGE_READ_TIMEOUT, conn_read.read(&mut buf)) => r,
+                _ = sess_up.cancelled() => break,
+                r = conn_read.read(&mut buf) => r,
             };
             let n = match read_res {
-                Ok(Ok(0)) => {
-                    // EOF: flush splitter tail
+                Ok(0) => {
                     if let Some(sp) = splitter.as_mut() {
                         let tail = sp.flush();
                         if !tail.is_empty() {
-                            let r = if tail.len() > 1 {
+                            let _ = if tail.len() > 1 {
                                 ws_up.send_batch(&tail).await
                             } else {
                                 ws_up.send(&tail[0]).await
                             };
-                            if r.is_err() {
-                                break;
-                            }
                         }
                     }
                     break;
                 }
-                Ok(Ok(n)) => n,
-                Ok(Err(_)) => break,
-                Err(_) => break, // read timeout
+                Ok(n) => n,
+                Err(_) => break,
             };
 
             let chunk = &mut buf[..n];
             STATS.bytes_up.fetch_add(n as i64, Ordering::Relaxed);
-            *la_up.lock().await = std::time::Instant::now();
 
             clt_dec.xor(chunk);
             tg_enc.xor(chunk);
 
-            let send_err = {
-                if let Some(sp) = splitter.as_mut() {
-                    let parts = sp.split(chunk);
-                    if parts.len() > 1 {
-                        ws_up.send_batch(&parts).await.is_err()
-                    } else if parts.len() == 1 {
-                        ws_up.send(&parts[0]).await.is_err()
-                    } else {
-                        false
-                    }
+            let send_err = if let Some(sp) = splitter.as_mut() {
+                let parts = sp.split(chunk);
+                if parts.len() > 1 {
+                    ws_up.send_batch(&parts).await.is_err()
+                } else if parts.len() == 1 {
+                    ws_up.send(&parts[0]).await.is_err()
                 } else {
-                    ws_up.send(chunk).await.is_err()
+                    false
                 }
+            } else {
+                ws_up.send(chunk).await.is_err()
             };
             if send_err {
                 break;
             }
         }
-        cancel_up.notify_waiters();
+        sess_up.cancel();
     });
 
     // down: ws -> client
     let ws_down = ws.clone();
-    let la_down = last_activity.clone();
-    let cancel_down = cancel.clone();
-    let cancel_token_down = cancel_token.clone();
+    let sess_down = session.clone();
     let down_task = tokio::spawn(async move {
         loop {
             let recv_res = tokio::select! {
-                _ = cancel_token_down.cancelled() => break,
-                _ = cancel_down.notified() => break,
-                r = ws_down.recv_with_timeout(BRIDGE_READ_TIMEOUT) => r,
+                _ = sess_down.cancelled() => break,
+                r = ws_down.recv() => r,
             };
             let mut data = match recv_res {
                 Ok(d) => d,
@@ -430,7 +391,6 @@ pub async fn bridge_ws(
             };
             let n = data.len();
             STATS.bytes_down.fetch_add(n as i64, Ordering::Relaxed);
-            *la_down.lock().await = std::time::Instant::now();
 
             tg_dec.xor(&mut data);
             clt_enc.xor(&mut data);
@@ -438,17 +398,15 @@ pub async fn bridge_ws(
                 break;
             }
         }
-        cancel_down.notify_waiters();
+        sess_down.cancel();
     });
 
     let _ = up_task.await;
     let _ = down_task.await;
-    cancel.notify_waiters();
-    ping_task.abort();
+    session.cancel();
 
     ws.close().await;
 }
-
 // ---------------------------------------------------------------------------
 // Bridge TCP
 // ---------------------------------------------------------------------------
@@ -475,7 +433,7 @@ pub async fn bridge_tcp(
     let tg_enc = Arc::new(Mutex::new(tg_enc));
     let tg_dec = Arc::new(Mutex::new(tg_dec));
 
-    let cancel = Arc::new(tokio::sync::Notify::new());
+    let cancel = cancel_token.child_token();
 
     let cancel_up = cancel.clone();
     let cancel_token_up = cancel_token.clone();
@@ -486,10 +444,10 @@ pub async fn bridge_tcp(
         loop {
             let n = tokio::select! {
                 _ = cancel_token_up.cancelled() => break,
-                _ = cancel_up.notified() => break,
-                r = tokio::time::timeout(BRIDGE_READ_TIMEOUT, c_read.read(&mut buf)) => match r {
-                    Ok(Ok(0)) => break,
-                    Ok(Ok(n)) => n,
+                _ = cancel_up.cancelled() => break,
+                r = c_read.read(&mut buf) => match r {
+                    Ok(0) => break,
+                    Ok(n) => n,
                     _ => break,
                 },
             };
@@ -501,7 +459,7 @@ pub async fn bridge_tcp(
                 break;
             }
         }
-        cancel_up.notify_waiters();
+        cancel_up.cancel();
     };
 
     let cancel_down = cancel.clone();
@@ -513,10 +471,10 @@ pub async fn bridge_tcp(
         loop {
             let n = tokio::select! {
                 _ = cancel_token_down.cancelled() => break,
-                _ = cancel_down.notified() => break,
-                r = tokio::time::timeout(BRIDGE_READ_TIMEOUT, r_read.read(&mut buf)) => match r {
-                    Ok(Ok(0)) => break,
-                    Ok(Ok(n)) => n,
+                _ = cancel_down.cancelled() => break,
+                r = r_read.read(&mut buf) => match r {
+                    Ok(0) => break,
+                    Ok(n) => n,
                     _ => break,
                 },
             };
@@ -528,7 +486,7 @@ pub async fn bridge_tcp(
                 break;
             }
         }
-        cancel_down.notify_waiters();
+        cancel_down.cancel();
     };
 
     tokio::join!(up, down);
@@ -614,7 +572,9 @@ async fn try_cfproxy_base_domain(dc: i32, base_domain: &str) -> (Option<RawWebSo
     if let Some(e) = err {
         // ВАЖНО (как в Go): cooldown ставим ТОЛЬКО при HTTP 429, иначе
         // любой reset/timeout выжигал бы домены и плодил лавину cooldown.
-        if is_http_status_error(&e, 429) {
+        // + 5xx: dead CF worker (http 503) — skip it for a while instead of
+        // retrying on every new Telegram connection.
+        if is_http_status_error(&e, 429) || e.handshake_status().map_or(false, |c| c >= 500) {
             mark_cfproxy_429_cooldown(&base_domain, &e);
         }
         if !resolved_ip.is_empty() {

@@ -30,7 +30,7 @@ object CfDomainCache {
      * on /apiws). Encoded form, exactly as the engine's decoder expects.
      */
     private val FALLBACK_DOMAINS = listOf(
-        "virqgj.com",
+        "virkgj.com",
         "vmmzovy.com",
         "mkuosckvso.com",
         "zaewayzmplad.com",

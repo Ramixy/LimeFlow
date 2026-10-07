@@ -21,6 +21,7 @@ use tokio_rustls::TlsConnector;
 // WS opcodes
 // ---------------------------------------------------------------------------
 
+pub const OP_CONT: u8 = 0x0;
 pub const OP_TEXT: u8 = 0x1;
 pub const OP_BINARY: u8 = 0x2;
 pub const OP_CLOSE: u8 = 0x8;
@@ -170,6 +171,7 @@ impl From<std::io::Error> for WsError {
 pub struct RawWebSocket {
     reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>>,
     writer: tokio::sync::Mutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+    frag: tokio::sync::Mutex<Vec<u8>>,
     pub closed: AtomicBool,
 }
 
@@ -205,7 +207,17 @@ impl RawWebSocket {
                 }
             }
         }
-        Ok(())
+        match tokio::time::timeout(WS_WRITE_TIMEOUT, writer.flush()).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => {
+                self.closed.store(true, Ordering::Relaxed);
+                Err(WsError::Io(e))
+            }
+            Err(_) => {
+                self.closed.store(true, Ordering::Relaxed);
+                Err(WsError::Timeout)
+            }
+        }
     }
 
     pub async fn send_ping(&self) -> Result<(), WsError> {
@@ -219,9 +231,17 @@ impl RawWebSocket {
     async fn write_frame(&self, frame: &[u8], timeout: Duration) -> Result<(), WsError> {
         let mut writer = self.writer.lock().await;
         let res = if timeout > Duration::ZERO {
-            tokio::time::timeout(timeout, writer.write_all(frame)).await
+            tokio::time::timeout(timeout, async {
+                writer.write_all(frame).await?;
+                writer.flush().await
+            })
+            .await
         } else {
-            Ok(writer.write_all(frame).await)
+            Ok(async {
+                writer.write_all(frame).await?;
+                writer.flush().await
+            }
+            .await)
         };
         match res {
             Ok(Ok(())) => Ok(()),
@@ -236,10 +256,10 @@ impl RawWebSocket {
         }
     }
 
-    // Recv обрабатывает контрольные фреймы (как Go Recv)
+    // Recv reassembles fragmented WebSocket messages and responds to control frames
     pub async fn recv(&self) -> Result<Vec<u8>, WsError> {
         while !self.is_closed() {
-            let (opcode, payload) = match self.read_frame().await {
+            let (opcode, payload, fin) = match self.read_frame().await {
                 Ok(v) => v,
                 Err(e) => {
                     self.closed.store(true, Ordering::Relaxed);
@@ -266,8 +286,26 @@ impl RawWebSocket {
                     continue;
                 }
                 OP_PONG => continue,
-                OP_TEXT | OP_BINARY => return Ok(payload),
-                _ => {}
+                OP_CONT | OP_TEXT | OP_BINARY => {
+                    let mut frag = self.frag.lock().await;
+                    if fin && frag.is_empty() {
+                        return Ok(payload);
+                    }
+                    frag.extend_from_slice(&payload);
+                    if frag.len() > 16 * 1024 * 1024 {
+                        self.closed.store(true, Ordering::Relaxed);
+                        return Err(WsError::Other(format!(
+                            "WS message too large: {} bytes",
+                            frag.len()
+                        )));
+                    }
+                    if !fin {
+                        continue;
+                    }
+                    let message = std::mem::take(&mut *frag);
+                    return Ok(message);
+                }
+                _ => continue,
             }
         }
         Err(WsError::Io(std::io::Error::new(
@@ -285,103 +323,27 @@ impl RawWebSocket {
         // Skipping writer.shutdown().await to avoid hanging on dead connections
     }
 
-    // recv с дедлайном чтения (для bridge).
-    // ВАЖНО: таймаут оборачивает только чтение ОДНОГО фрейма целиком под
-    // удержанием lock, чтобы НЕ дропать future посреди read_exact (иначе
-    // теряются уже прочитанные байты BufReader → рассинхрон потока).
     pub async fn recv_with_timeout(&self, dur: Duration) -> Result<Vec<u8>, WsError> {
-        loop {
-            if self.is_closed() {
-                return Err(WsError::Io(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "EOF",
-                )));
-            }
-            let frame = {
-                let mut reader = self.reader.lock().await;
-                match tokio::time::timeout(dur, read_frame_locked(&mut reader)).await {
-                    Ok(Ok(v)) => v,
-                    Ok(Err(e)) => {
-                        self.closed.store(true, Ordering::Relaxed);
-                        return Err(e);
-                    }
-                    Err(_) => return Err(WsError::Timeout),
-                }
-            };
-            let (opcode, payload) = frame;
-            match opcode {
-                OP_CLOSE => {
-                    self.closed.store(true, Ordering::Relaxed);
-                    let mut close_payload = payload;
-                    if close_payload.len() > 2 {
-                        close_payload.truncate(2);
-                    }
-                    let reply = build_frame(OP_CLOSE, &close_payload, true);
-                    let _ = self.write_frame(&reply, WS_CONTROL_TIMEOUT).await;
-                    return Err(WsError::Io(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "EOF",
-                    )));
-                }
-                OP_PING => {
-                    let pong = build_frame(OP_PONG, &payload, true);
-                    let _ = self.write_frame(&pong, WS_CONTROL_TIMEOUT).await;
-                    continue;
-                }
-                OP_PONG => continue,
-                OP_TEXT | OP_BINARY => return Ok(payload),
-                _ => continue,
-            }
+        match tokio::time::timeout(dur, self.recv()).await {
+            Ok(v) => v,
+            Err(_) => Err(WsError::Timeout),
         }
     }
 
-    async fn read_frame(&self) -> Result<(u8, Vec<u8>), WsError> {
+    async fn read_frame(&self) -> Result<(u8, Vec<u8>, bool), WsError> {
         let mut reader = self.reader.lock().await;
-        let mut hdr = [0u8; 2];
-        reader.read_exact(&mut hdr).await?;
-
-        let opcode = hdr[0] & 0x0F;
-        let mut length = (hdr[1] & 0x7F) as u64;
-
-        if length == 126 {
-            let mut buf = [0u8; 2];
-            reader.read_exact(&mut buf).await?;
-            length = BigEndian::read_u16(&buf) as u64;
-        } else if length == 127 {
-            let mut buf = [0u8; 8];
-            reader.read_exact(&mut buf).await?;
-            length = BigEndian::read_u64(&buf);
-        }
-
-        let has_mask = (hdr[1] & 0x80) != 0;
-        let mut mask_key = [0u8; 4];
-        if has_mask {
-            reader.read_exact(&mut mask_key).await?;
-        }
-
-        const MAX_FRAME_PAYLOAD: u64 = 16 * 1024 * 1024;
-        if length > MAX_FRAME_PAYLOAD {
-            return Err(WsError::Other(format!("frame too large: {} bytes", length)));
-        }
-        let mut payload = vec![0u8; length as usize];
-        if length > 0 {
-            reader.read_exact(&mut payload).await?;
-        }
-        if has_mask {
-            xor_mask_in_place(&mut payload, &mask_key);
-        }
-        Ok((opcode, payload))
+        read_frame_locked(&mut reader).await
     }
 }
 
-// Чтение одного фрейма из уже захваченного reader (без повторного lock).
-// Используется recv_with_timeout, чтобы держать lock на всё время чтения фрейма.
+// Чтение одного фрейма из уже захваченного reader.
 async fn read_frame_locked(
     reader: &mut BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>,
-) -> Result<(u8, Vec<u8>), WsError> {
+) -> Result<(u8, Vec<u8>, bool), WsError> {
     let mut hdr = [0u8; 2];
     reader.read_exact(&mut hdr).await?;
 
+    let fin = (hdr[0] & 0x80) != 0;
     let opcode = hdr[0] & 0x0F;
     let mut length = (hdr[1] & 0x7F) as u64;
 
@@ -412,7 +374,7 @@ async fn read_frame_locked(
     if has_mask {
         xor_mask_in_place(&mut payload, &mask_key);
     }
-    Ok((opcode, payload))
+    Ok((opcode, payload, fin))
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +591,7 @@ pub async fn ws_connect_once(
         return Ok(RawWebSocket {
             reader: tokio::sync::Mutex::new(bufreader),
             writer: tokio::sync::Mutex::new(write_half),
+            frag: tokio::sync::Mutex::new(Vec::new()),
             closed: AtomicBool::new(false),
         });
     }

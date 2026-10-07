@@ -8,34 +8,17 @@
   Локальная обработка Android-трафика без root с интегрированным Telegram WebSocket Proxy.
 </p>
 
-## Что нового в 1.4.1
+## Что нового в 1.5.1
 
-- Раздельные APK под архитектуры: arm64-v8a, armeabi-v7a и universal — меньше размер, нативные библиотеки всегда совпадают с устройством.
-
-## Что нового в 1.4.0
-
-Версия 1.4.0 добавляет второй движок и переносит приёмы zapret:
-
-- **Zapret Engine (root)** — настоящий nfqws из [bol-van/zapret](https://github.com/bol-van/zapret) (MIT),
-  собранный под Android и вшитый в APK. Работает системно через iptables + NFQUEUE без VPN-интерфейса.
-  Стратегии — оригинальные конфиги [Flowseal 1.10.0](https://github.com/Flowseal/zapret-discord-youtube)
-  один в один (General, ALT1–12, EXP, FAKE TLS AUTO, SIMPLE FAKE), со списками хостов и fake-бинарями;
-- fake-пакеты zapret на основном движке: полные Chrome-ClientHello (google, max.ru, 4pda) и настоящий
-  QUIC Initial встроены в стратегии ZF-серии, голосовые порты Discord получают отдельный UDP-декей;
-- авто-TTL (`-z`): движок сам замеряет дистанцию до сервера UDP-пробой и подбирает TTL подмены;
-- dupsid (`-Qd`) и новые якоря разреза `+sd` (midsld) и `+sx` (sniext);
-- порт стратегий zapret 1.10.0 на byedpi (серия Z) и переключатель «Классический движок»;
-- поиск стратегий переживает поворот экрана, тестирует стратегии на случайном свободном порте
-  и показывает действительно лучшую стратегию.
-
-Это локальный обход DPI, не шифрование Amnezia или WireGuard.
-Полное описание находится в [CHANGELOG.md](CHANGELOG.md).
+- **Фикс Telegram WS Proxy:** устранена проблема с отключением после подключения (реализована сборка фрагментированных WebSocket-фреймов в `ws.rs`, исключающая сбой шифрования AES-CTR, плюс гарантированный `flush`), авто-кулдаун на ошибки Cloudflare $\ge 500$, очистка лишних пингов/таймаутов, паритет маршрутизации с десктопным `TgWsProxy`.
+- **Виджеты и кнопка включения:** переключение VPN на виджетах переведено на Activity-трамплин (исправлена блокировка запуска Foreground Service на Android 12+), добавлен 12-секундный watchdog на кнопку питания для предотвращения зависания анимации.
+- **Новые стратегии:** добавлены 4 актуальные стратегии обхода DPI/ТСПУ (`LIMEFLOW TSPU ULTRA`, `ZAPRET YANDEX FAKE`, `DISCORD VOICE TURBO`, `MOBILE AGGRESSIVE`).
 
 ## Скачать
 
-- [LimeFlow 1.4.1 Debug APK — arm64-v8a](releases/LimeFlow-1.4.1-debug-arm64-v8a.apk)
-- [LimeFlow 1.4.1 Debug APK — armeabi-v7a](releases/LimeFlow-1.4.1-debug-armeabi-v7a.apk)
-- [LimeFlow 1.4.1 Debug APK — universal](releases/LimeFlow-1.4.1-debug-universal.apk)
+- [LimeFlow 1.5.1 Debug APK — arm64-v8a](releases/LimeFlow-1.5.1-debug-arm64-v8a.apk)
+- [LimeFlow 1.5.1 Debug APK — armeabi-v7a](releases/LimeFlow-1.5.1-debug-armeabi-v7a.apk)
+- [LimeFlow 1.5.1 Debug APK — universal](releases/LimeFlow-1.5.1-debug-universal.apk)
 - [Раздел Releases](../../releases)
 
 APK имеет пакет `app.alt11.mobile`, минимальная версия Android — 6.0.

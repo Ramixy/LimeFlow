@@ -19,6 +19,10 @@ class FlowsealProfilesTest {
         "limeflow_rostelecom",
         "limeflow_mgts",
         "limeflow_mts",
+        "limeflow_tspu_ultra",
+        "limeflow_yandex_fake",
+        "limeflow_voice_turbo",
+        "limeflow_mobile_aggr",
     )
 
     @Test

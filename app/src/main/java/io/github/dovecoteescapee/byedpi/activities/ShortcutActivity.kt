@@ -54,7 +54,7 @@ class ShortcutActivity : Activity() {
             Toast.makeText(this, R.string.vpn_permission_denied, Toast.LENGTH_SHORT).show()
             return
         }
-        ServiceManager.start(this, this.getPreferences().mode())
+        ServiceManager.start(this)
         Toast.makeText(this, R.string.shortcut_connecting, Toast.LENGTH_SHORT).show()
     }
 

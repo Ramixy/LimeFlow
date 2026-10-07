@@ -109,10 +109,12 @@ object VpnWidgets {
     }
 
     private fun togglePendingIntent(context: Context, receiver: Class<*>): PendingIntent =
-        PendingIntent.getBroadcast(
+        PendingIntent.getActivity(
             context,
-            0,
-            Intent(context, receiver).setAction(WIDGET_TOGGLE_ACTION),
+            if (receiver == VpnWidgetReceiver::class.java) 11 else 12,
+            Intent(context, io.github.dovecoteescapee.byedpi.activities.ShortcutActivity::class.java)
+                .setAction(io.github.dovecoteescapee.byedpi.data.CONTROL_ACTION_TOGGLE)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
