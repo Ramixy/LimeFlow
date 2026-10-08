@@ -15,6 +15,7 @@ interface ProxyLibrary : Library {
     fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
     fun SetDpiConfig(enabled: Int, splitPos: Int, socks5Port: Int)
+    fun SetFrontingConfig(enabled: Int, snis: String)
     fun ResetProxyState(): Int
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
@@ -51,6 +52,13 @@ object NativeProxy {
             if (enabled) 1 else 0,
             splitPos,
             socks5Port
+        )
+    }
+
+    fun setFrontingConfig(enabled: Boolean, snis: String = "") {
+        ProxyLibrary.INSTANCE.SetFrontingConfig(
+            if (enabled) 1 else 0,
+            snis
         )
     }
 

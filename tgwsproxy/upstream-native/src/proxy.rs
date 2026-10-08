@@ -1097,6 +1097,25 @@ pub async fn connect_direct_ws(
     let mut ws_failed_redirect = false;
     let mut all_redirects = true;
 
+    // 1. Try with domain fronting first (sprinthost.ru, vk.com, yandex.ru - as in desktop TgWsProxy)
+    if FRONTING_ENABLED.load(Ordering::Relaxed) {
+        let fronting_snis = FRONTING_DOMAINS.read().clone();
+        for sni in &fronting_snis {
+            for dom in domains {
+                match ws_connect_with_sni(target, dom, "/apiws", timeout.min(6.0), Some(sni)).await {
+                    Ok(ws) => {
+                        linfo!(" DC connect ok via fronting SNI {} -> {}", sni, target);
+                        return (Some(ws), false, false);
+                    }
+                    Err(e) => {
+                        ldebug!(" fronting SNI {} -> {} failed: {}", sni, target, e.compact());
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Direct without fronting
     for dom in domains {
         match ws_connect(target, dom, "/apiws", timeout).await {
             Ok(ws) => return (Some(ws), ws_failed_redirect, false),

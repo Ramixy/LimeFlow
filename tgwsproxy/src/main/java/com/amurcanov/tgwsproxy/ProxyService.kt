@@ -186,6 +186,7 @@ class ProxyService : Service() {
                 CfDomainCache.ensureFresh(cacheDir)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
                 NativeProxy.setDpiConfig(dpiBypassEnabled, dpiSplitPos, upstreamSocks5Port)
+                NativeProxy.setFrontingConfig(true)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result != 0) {
                     Log.e(TAG, "StartProxy returned error code: $result")

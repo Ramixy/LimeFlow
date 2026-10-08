@@ -251,6 +251,24 @@ pub extern "C" fn SetDpiConfig(enabled: c_int, split_pos: c_int, socks5_port: c_
     UPSTREAM_SOCKS5_PORT.store(socks5_port, Ordering::Relaxed);
 }
 
+/// # Safety
+/// `c_snis` — comma-separated custom fronting SNIs or null.
+#[no_mangle]
+pub unsafe extern "C" fn SetFrontingConfig(enabled: c_int, c_snis: *const c_char) {
+    FRONTING_ENABLED.store(enabled != 0, Ordering::Relaxed);
+    let snis_raw = cstr_to_string(c_snis);
+    if !snis_raw.is_empty() {
+        let list: Vec<String> = snis_raw
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !list.is_empty() {
+            *FRONTING_DOMAINS.write() = list;
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn ResetProxyState() -> c_int {
     cfproxy::clear_doh_cache();

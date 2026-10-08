@@ -46,6 +46,17 @@ pub static DPI_BYPASS_ENABLED: AtomicBool = AtomicBool::new(true);
 pub static DPI_SPLIT_POS: AtomicI32 = AtomicI32::new(2);
 pub static UPSTREAM_SOCKS5_PORT: AtomicI32 = AtomicI32::new(0);
 
+// Domain fronting config (sprinthost.ru, vk.com, yandex.ru as in desktop TgWsProxy)
+pub static FRONTING_ENABLED: AtomicBool = AtomicBool::new(true);
+pub static FRONTING_DOMAINS: Lazy<RwLock<Vec<String>>> = Lazy::new(|| {
+    RwLock::new(vec![
+        "sprinthost.ru".to_string(),
+        "vk.com".to_string(),
+        "yandex.ru".to_string(),
+        "mail.ru".to_string(),
+    ])
+});
+
 #[derive(Clone)]
 pub struct Cfproxy429State {
     pub until: Option<Instant>,

@@ -174,6 +174,7 @@ pub struct DesyncStream<S> {
     inner: S,
     split_pos: usize,
     split_done: bool,
+    needs_flush: bool,
 }
 
 impl<S> DesyncStream<S> {
@@ -182,6 +183,7 @@ impl<S> DesyncStream<S> {
             inner,
             split_pos,
             split_done: split_pos == 0,
+            needs_flush: false,
         }
     }
 }
@@ -202,12 +204,23 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for DesyncStream<S> {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
+        if self.needs_flush {
+            match Pin::new(&mut self.inner).poll_flush(cx) {
+                Poll::Ready(Ok(())) => {
+                    self.needs_flush = false;
+                    self.split_done = true;
+                }
+                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
         if !self.split_done && self.split_pos > 0 && buf.len() > self.split_pos {
             let n = self.split_pos.min(buf.len());
             match Pin::new(&mut self.inner).poll_write(cx, &buf[..n]) {
                 Poll::Ready(Ok(written)) => {
                     if written > 0 {
-                        self.split_done = true;
+                        self.needs_flush = true;
                     }
                     Poll::Ready(Ok(written))
                 }
@@ -219,6 +232,15 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for DesyncStream<S> {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        if self.needs_flush {
+            match Pin::new(&mut self.inner).poll_flush(cx) {
+                Poll::Ready(Ok(())) => {
+                    self.needs_flush = false;
+                    self.split_done = true;
+                }
+                other => return other,
+            }
+        }
         Pin::new(&mut self.inner).poll_flush(cx)
     }
 
@@ -229,6 +251,51 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for DesyncStream<S> {
 
 pub type UpstreamStream = DesyncStream<TcpStream>;
 pub type UpstreamTlsStream = TlsStream<UpstreamStream>;
+
+pub enum UpstreamConn {
+    Tls(UpstreamTlsStream),
+    Plain(UpstreamStream),
+}
+
+impl AsyncRead for UpstreamConn {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            UpstreamConn::Tls(s) => Pin::new(s).poll_read(cx, buf),
+            UpstreamConn::Plain(s) => Pin::new(s).poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for UpstreamConn {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        match self.get_mut() {
+            UpstreamConn::Tls(s) => Pin::new(s).poll_write(cx, buf),
+            UpstreamConn::Plain(s) => Pin::new(s).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            UpstreamConn::Tls(s) => Pin::new(s).poll_flush(cx),
+            UpstreamConn::Plain(s) => Pin::new(s).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            UpstreamConn::Tls(s) => Pin::new(s).poll_shutdown(cx),
+            UpstreamConn::Plain(s) => Pin::new(s).poll_shutdown(cx),
+        }
+    }
+}
 
 pub async fn connect_socks5(
     proxy_port: u16,
@@ -311,8 +378,8 @@ pub async fn connect_socks5(
 // ---------------------------------------------------------------------------
 
 pub struct RawWebSocket {
-    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<UpstreamTlsStream>>>,
-    writer: tokio::sync::Mutex<tokio::io::WriteHalf<UpstreamTlsStream>>,
+    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<UpstreamConn>>>,
+    writer: tokio::sync::Mutex<tokio::io::WriteHalf<UpstreamConn>>,
     frag: tokio::sync::Mutex<Vec<u8>>,
     pub closed: AtomicBool,
 }
@@ -480,7 +547,7 @@ impl RawWebSocket {
 
 // Чтение одного фрейма из уже захваченного reader.
 async fn read_frame_locked(
-    reader: &mut BufReader<tokio::io::ReadHalf<UpstreamTlsStream>>,
+    reader: &mut BufReader<tokio::io::ReadHalf<UpstreamConn>>,
 ) -> Result<(u8, Vec<u8>, bool), WsError> {
     let mut hdr = [0u8; 2];
     reader.read_exact(&mut hdr).await?;
@@ -624,22 +691,25 @@ fn server_name(domain: &str) -> ServerName<'static> {
         .unwrap_or_else(|_| ServerName::IpAddress("127.0.0.1".parse::<IpAddr>().unwrap().into()))
 }
 
-// wsConnectOnce — заголовки 1-в-1 как в Python raw_websocket.py (без User-Agent).
-pub async fn ws_connect_once(
+// ws_connect_once_full — support TLS, plain HTTP, custom SNI (domain fronting)
+pub async fn ws_connect_once_full(
     dial_addr: &str,
     domain: &str,
     path: &str,
     timeout: Duration,
+    sni_override: Option<&str>,
+    secure: bool,
 ) -> Result<RawWebSocket, WsError> {
     if dial_addr.is_empty() {
         return Err(WsError::Other("empty dial address".to_string()));
     }
 
-    let target_addr = format!("{}:443", dial_addr);
+    let port: u16 = if secure { 443 } else { 80 };
+    let target_addr = format!("{}:{}", dial_addr, port);
     let socks5_port = UPSTREAM_SOCKS5_PORT.load(Ordering::Relaxed);
 
     let raw_conn = if socks5_port > 0 {
-        match tokio::time::timeout(timeout, connect_socks5(socks5_port as u16, dial_addr, 443)).await {
+        match tokio::time::timeout(timeout, connect_socks5(socks5_port as u16, dial_addr, port)).await {
             Ok(Ok(c)) => c,
             Ok(Err(e)) => return Err(WsError::Io(e)),
             Err(_) => return Err(WsError::Timeout),
@@ -653,10 +723,6 @@ pub async fn ws_connect_once(
     };
     set_sock_opts(&raw_conn);
 
-    let connector = TlsConnector::from(TLS_CONFIG.clone());
-    let sni = server_name(domain);
-
-    let handshake_timeout = ws_handshake_timeout(timeout);
     let dpi_enabled = DPI_BYPASS_ENABLED.load(Ordering::Relaxed);
     let split_pos = if dpi_enabled {
         DPI_SPLIT_POS.load(Ordering::Relaxed).max(1) as usize
@@ -665,22 +731,32 @@ pub async fn ws_connect_once(
     };
     let desync_conn = DesyncStream::new(raw_conn, split_pos);
 
-    let tls_conn =
-        match tokio::time::timeout(handshake_timeout, connector.connect(sni, desync_conn)).await {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => {
-                if e.kind() != std::io::ErrorKind::ConnectionReset {
-                    ldebug!(" ws tls fail {} via {}: {}", domain, dial_addr, e);
-                }
-                return Err(WsError::Io(e));
-            }
-            Err(_) => {
-                ldebug!(" ws tls fail {} via {}: timeout", domain, dial_addr);
-                return Err(WsError::Timeout);
-            }
-        };
+    let upstream_conn: UpstreamConn = if secure {
+        let connector = TlsConnector::from(TLS_CONFIG.clone());
+        let sni_name = sni_override.unwrap_or(domain);
+        let sni = server_name(sni_name);
 
-    let (read_half, mut write_half) = tokio::io::split(tls_conn);
+        let handshake_timeout = ws_handshake_timeout(timeout);
+        let tls_conn =
+            match tokio::time::timeout(handshake_timeout, connector.connect(sni, desync_conn)).await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => {
+                    if e.kind() != std::io::ErrorKind::ConnectionReset {
+                        ldebug!(" ws tls fail {} via {}: {}", domain, dial_addr, e);
+                    }
+                    return Err(WsError::Io(e));
+                }
+                Err(_) => {
+                    ldebug!(" ws tls fail {} via {}: timeout", domain, dial_addr);
+                    return Err(WsError::Timeout);
+                }
+            };
+        UpstreamConn::Tls(tls_conn)
+    } else {
+        UpstreamConn::Plain(desync_conn)
+    };
+
+    let (read_half, mut write_half) = tokio::io::split(upstream_conn);
 
     // websocket key
     let mut ws_key_bytes = [0u8; 16];
@@ -698,7 +774,12 @@ pub async fn ws_connect_once(
         path, domain, ws_key
     );
 
-    match tokio::time::timeout(timeout, write_half.write_all(req.as_bytes())).await {
+    match tokio::time::timeout(timeout, async {
+        write_half.write_all(req.as_bytes()).await?;
+        write_half.flush().await
+    })
+    .await
+    {
         Ok(Ok(())) => {}
         Ok(Err(e)) => return Err(WsError::Io(e)),
         Err(_) => return Err(WsError::Timeout),
@@ -773,6 +854,34 @@ pub async fn ws_connect_once(
     }))
 }
 
+pub async fn ws_connect_once(
+    dial_addr: &str,
+    domain: &str,
+    path: &str,
+    timeout: Duration,
+) -> Result<RawWebSocket, WsError> {
+    ws_connect_once_full(dial_addr, domain, path, timeout, None, true).await
+}
+
+pub async fn ws_connect_once_with_sni(
+    dial_addr: &str,
+    domain: &str,
+    path: &str,
+    timeout: Duration,
+    sni_override: Option<&str>,
+) -> Result<RawWebSocket, WsError> {
+    ws_connect_once_full(dial_addr, domain, path, timeout, sni_override, true).await
+}
+
+pub async fn ws_connect_once_http(
+    dial_addr: &str,
+    domain: &str,
+    path: &str,
+    timeout: Duration,
+) -> Result<RawWebSocket, WsError> {
+    ws_connect_once_full(dial_addr, domain, path, timeout, None, false).await
+}
+
 async fn read_line<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<String, WsError> {
     let mut buf = Vec::with_capacity(128);
     let mut byte = [0u8; 1];
@@ -802,6 +911,16 @@ pub async fn ws_connect(
     path: &str,
     timeout: f64,
 ) -> Result<RawWebSocket, WsError> {
+    ws_connect_with_sni(ip, domain, path, timeout, None).await
+}
+
+pub async fn ws_connect_with_sni(
+    ip: &str,
+    domain: &str,
+    path: &str,
+    timeout: f64,
+    sni_override: Option<&str>,
+) -> Result<RawWebSocket, WsError> {
     let path = if path.is_empty() { "/apiws" } else { path };
     let attempt_timeout = ws_connect_timeout(timeout);
 
@@ -811,13 +930,13 @@ pub async fn ws_connect(
         ip.trim().to_string()
     };
 
-    match ws_connect_once(&primary_addr, domain, path, attempt_timeout).await {
-        Ok(ws) => return Ok(ws),
+    match ws_connect_once_with_sni(&primary_addr, domain, path, attempt_timeout, sni_override).await {
+        Ok(ws) => Ok(ws),
         Err(e) => {
             if primary_addr == domain && primary_addr.parse::<IpAddr>().is_err() {
                 if let Some(resolved) = crate::cfproxy::resolve_doh(domain).await {
                     if !resolved.is_empty() && resolved != primary_addr {
-                        return ws_connect_once(&resolved, domain, path, attempt_timeout).await;
+                        return ws_connect_once_with_sni(&resolved, domain, path, attempt_timeout, sni_override).await;
                     }
                 }
             }
@@ -828,6 +947,16 @@ pub async fn ws_connect(
 
 // connectOneWS: перебор доменов
 pub async fn connect_one_ws(ip: &str, domains: &[String]) -> Option<RawWebSocket> {
+    if FRONTING_ENABLED.load(Ordering::Relaxed) {
+        let fronting_snis = FRONTING_DOMAINS.read().clone();
+        for sni in &fronting_snis {
+            for d in domains {
+                if let Ok(ws) = ws_connect_with_sni(ip, d, "/apiws", 5.0, Some(sni)).await {
+                    return Some(ws);
+                }
+            }
+        }
+    }
     for d in domains {
         if let Ok(ws) = ws_connect(ip, d, "/apiws", WS_POOL_CONNECT_TIMEOUT).await {
             return Some(ws);
