@@ -71,9 +71,19 @@ class ByeDpiVpnService : LifecycleVpnService() {
         // become foreground immediately, even while the native engine starts.
         startForeground()
         return when (val action = intent?.action) {
-            START_ACTION -> {
-                lifecycleScope.launch { start() }
-                START_STICKY
+            // null: the system restarted a sticky service after killing the
+            // process; SERVICE_INTERFACE: Android's always-on VPN starts us.
+            // Both used to fall into "unknown" and left a foreground
+            // notification without a tunnel.
+            START_ACTION, SERVICE_INTERFACE, null -> {
+                if (action != START_ACTION && prepare(this) != null) {
+                    AppLog.w(TAG, "Restart without VPN consent; stopping")
+                    lifecycleScope.launch { stop() }
+                    START_NOT_STICKY
+                } else {
+                    lifecycleScope.launch { start() }
+                    START_STICKY
+                }
             }
 
             STOP_ACTION -> {
@@ -83,6 +93,7 @@ class ByeDpiVpnService : LifecycleVpnService() {
 
             else -> {
                 AppLog.w(TAG, "Unknown action: $action")
+                if (status != ServiceStatus.Connected) lifecycleScope.launch { stop() }
                 START_NOT_STICKY
             }
         }
@@ -102,10 +113,19 @@ class ByeDpiVpnService : LifecycleVpnService() {
         }
 
         try {
-            mutex.withLock {
+            val started = mutex.withLock {
+                // A second tap on a widget/tile while the first start is still
+                // running used to hit "Proxy fields not null", whose error
+                // path stopped the tunnel that had just come up.
+                if (status == ServiceStatus.Connected || proxyJob != null) {
+                    AppLog.w(TAG, "Start already in progress")
+                    return@withLock false
+                }
                 startProxy()
                 startTun2Socks()
+                true
             }
+            if (!started) return
             TrafficStatsStore.startSession()
             updateStatus(ServiceStatus.Connected)
         } catch (error: Throwable) {
@@ -231,7 +251,7 @@ class ByeDpiVpnService : LifecycleVpnService() {
         }
 
         val sharedPreferences = getPreferences()
-        val port = sharedPreferences.getString("byedpi_proxy_port", null)?.toInt() ?: 1080
+        val port = sharedPreferences.getString("byedpi_proxy_port", null)?.toIntOrNull() ?: 1080
         val dns = sharedPreferences.getStringNotNull("dns_ip", "1.1.1.1")
         val ipv6 = sharedPreferences.getBoolean("ipv6_enable", true)
 
@@ -247,7 +267,9 @@ class ByeDpiVpnService : LifecycleVpnService() {
         """.trimMargin("| ")
 
         val configPath = try {
-            File.createTempFile("config", "tmp", cacheDir).apply {
+            // Fixed name: createTempFile left a new config file behind on
+            // every connect, since the cleanup deletes "config.tmp".
+            File(cacheDir, "config.tmp").apply {
                 writeText(tun2socksConfig)
             }
         } catch (e: Exception) {

@@ -14,9 +14,6 @@ interface ProxyLibrary : Library {
     fun SetPoolSize(size: Int)
     fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
-    fun SetDpiConfig(enabled: Int, splitPos: Int, socks5Port: Int)
-    fun SetFrontingConfig(enabled: Int, snis: String)
-    fun ResetProxyState(): Int
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
     fun FreeString(p: Pointer)
@@ -45,25 +42,6 @@ object NativeProxy {
             if (priority) 1 else 0,
             userDomain
         )
-    }
-
-    fun setDpiConfig(enabled: Boolean, splitPos: Int, socks5Port: Int) {
-        ProxyLibrary.INSTANCE.SetDpiConfig(
-            if (enabled) 1 else 0,
-            splitPos,
-            socks5Port
-        )
-    }
-
-    fun setFrontingConfig(enabled: Boolean, snis: String = "") {
-        ProxyLibrary.INSTANCE.SetFrontingConfig(
-            if (enabled) 1 else 0,
-            snis
-        )
-    }
-
-    fun resetProxyState(): Int {
-        return ProxyLibrary.INSTANCE.ResetProxyState()
     }
 
     /** Returns the full secret with correct prefix (dd or ee+domain_hex) */

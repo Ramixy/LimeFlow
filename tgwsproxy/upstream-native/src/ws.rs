@@ -8,14 +8,11 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
 use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::IpAddr;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
@@ -168,395 +165,12 @@ impl From<std::io::Error> for WsError {
 }
 
 // ---------------------------------------------------------------------------
-// DesyncStream & SOCKS5 upstream support for DPI circumvention
-// ---------------------------------------------------------------------------
-
-// Режимы десинхронизации первого пакета (ClientHello):
-//   0 — старый: TCP-разрез на split_pos байт
-//   1 — TCP-разрез посреди SNI (hostname)
-//   2 — TLS record split посреди SNI + TCP-разрез посреди SNI (по умолчанию)
-// TLS record split ломает DPI, который ищет SNI в одной TLS-записи и не
-// собирает несколько записей (типичное поведение ТСПУ у мобильных операторов).
-pub const DESYNC_MODE_SPLIT: i32 = 0;
-pub const DESYNC_MODE_SNI_SPLIT: i32 = 1;
-pub const DESYNC_MODE_TLSREC: i32 = 2;
-
-/// Возвращает (смещение начала hostname, длина) внутри TLS ClientHello,
-/// если `buf` начинается с полной TLS-записи handshake/ClientHello с SNI.
-pub fn find_sni(buf: &[u8]) -> Option<(usize, usize)> {
-    if buf.len() < 5 || buf[0] != 0x16 || buf[1] != 0x03 {
-        return None;
-    }
-    let rec_len = ((buf[3] as usize) << 8) | buf[4] as usize;
-    let rec_end = 5 + rec_len;
-    if buf.len() < rec_end || rec_len < 4 || buf[5] != 0x01 {
-        return None;
-    }
-    let rd16 = |p: usize| -> Option<usize> {
-        if p + 2 > rec_end {
-            None
-        } else {
-            Some(((buf[p] as usize) << 8) | buf[p + 1] as usize)
-        }
-    };
-    // handshake header (4) + legacy_version (2) + random (32)
-    let mut p = 5 + 4 + 2 + 32;
-    if p + 1 > rec_end {
-        return None;
-    }
-    p += 1 + buf[p] as usize; // session_id
-    p += 2 + rd16(p)?; // cipher_suites
-    if p + 1 > rec_end {
-        return None;
-    }
-    p += 1 + buf[p] as usize; // compression_methods
-    let ext_total = rd16(p)?;
-    p += 2;
-    let ext_end = (p + ext_total).min(rec_end);
-    while p + 4 <= ext_end {
-        let ext_type = rd16(p)?;
-        let ext_len = rd16(p + 2)?;
-        let body = p + 4;
-        if body + ext_len > ext_end {
-            return None;
-        }
-        if ext_type == 0 {
-            // server_name_list len(2) + name_type(1) + name len(2) + name
-            if ext_len < 5 || buf[body + 2] != 0 {
-                return None;
-            }
-            let name_len = rd16(body + 3)?;
-            let name_start = body + 5;
-            if name_len == 0 || name_start + name_len > body + ext_len {
-                return None;
-            }
-            return Some((name_start, name_len));
-        }
-        p = body + ext_len;
-    }
-    None
-}
-
-/// Строит переписанный первый пакет и длины TCP-сегментов, на которые его
-/// надо порезать. None — пакет не трогаем.
-pub fn plan_desync(buf: &[u8], mode: i32, split_pos: usize) -> Option<(Vec<u8>, Vec<usize>)> {
-    let sni = if mode == DESYNC_MODE_SPLIT { None } else { find_sni(buf) };
-    match sni {
-        Some((host_start, host_len)) => {
-            let host_mid = host_start + (host_len / 2).max(1);
-            if mode == DESYNC_MODE_TLSREC {
-                let rec_len = ((buf[3] as usize) << 8) | buf[4] as usize;
-                let payload = &buf[5..5 + rec_len];
-                let k = host_mid - 5; // точка разреза внутри payload записи
-                if k == 0 || k >= rec_len {
-                    return None;
-                }
-                let mut out = Vec::with_capacity(buf.len() + 5);
-                out.extend_from_slice(&[0x16, buf[1], buf[2], (k >> 8) as u8, k as u8]);
-                out.extend_from_slice(&payload[..k]);
-                let rest = rec_len - k;
-                out.extend_from_slice(&[0x16, buf[1], buf[2], (rest >> 8) as u8, rest as u8]);
-                out.extend_from_slice(&payload[k..]);
-                out.extend_from_slice(&buf[5 + rec_len..]);
-                // TCP: [начало .. середина первой половины hostname] | остальное.
-                // Hostname оказывается разрезан и по TCP, и по TLS-записям.
-                let cut = (host_start + (host_mid - host_start) / 2).max(host_start + 1);
-                let mut segs = Vec::new();
-                if split_pos > 0 && split_pos < cut {
-                    segs.push(split_pos);
-                    segs.push(cut - split_pos);
-                } else {
-                    segs.push(cut);
-                }
-                segs.push(out.len() - cut);
-                Some((out, segs))
-            } else {
-                let cut = host_mid;
-                if cut >= buf.len() {
-                    return None;
-                }
-                let mut segs = Vec::new();
-                if split_pos > 0 && split_pos < cut {
-                    segs.push(split_pos);
-                    segs.push(cut - split_pos);
-                } else {
-                    segs.push(cut);
-                }
-                segs.push(buf.len() - cut);
-                Some((buf.to_vec(), segs))
-            }
-        }
-        None => {
-            if split_pos > 0 && buf.len() > split_pos {
-                Some((buf.to_vec(), vec![split_pos, buf.len() - split_pos]))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-pub struct DesyncStream<S> {
-    inner: S,
-    enabled: bool,
-    mode: i32,
-    split_pos: usize,
-    first_done: bool,
-    // переписанный первый пакет и план его отправки
-    pending: Vec<u8>,
-    segs: std::collections::VecDeque<usize>,
-    off: usize,
-    seg_left: usize,
-    consumed: usize,
-    delay: Option<Pin<Box<tokio::time::Sleep>>>,
-}
-
-impl<S> DesyncStream<S> {
-    pub fn new(inner: S, split_pos: usize) -> Self {
-        Self::with_mode(inner, split_pos > 0, DESYNC_MODE_TLSREC, split_pos)
-    }
-
-    pub fn with_mode(inner: S, enabled: bool, mode: i32, split_pos: usize) -> Self {
-        Self {
-            inner,
-            enabled,
-            mode,
-            split_pos,
-            first_done: !enabled,
-            pending: Vec::new(),
-            segs: std::collections::VecDeque::new(),
-            off: 0,
-            seg_left: 0,
-            consumed: 0,
-            delay: None,
-        }
-    }
-}
-
-impl<S: AsyncRead + Unpin> AsyncRead for DesyncStream<S> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_read(cx, buf)
-    }
-}
-
-impl<S: AsyncWrite + Unpin> AsyncWrite for DesyncStream<S> {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        let this = &mut *self;
-        if this.first_done {
-            return Pin::new(&mut this.inner).poll_write(cx, buf);
-        }
-
-        // Первый вызов: строим план. rustls при Pending повторяет запись тех
-        // же байт, поэтому копия в pending корректна.
-        if this.pending.is_empty() {
-            match plan_desync(buf, this.mode, this.split_pos) {
-                Some((data, segs)) => {
-                    this.pending = data;
-                    this.segs = segs.into_iter().filter(|&n| n > 0).collect();
-                    this.off = 0;
-                    this.seg_left = this.segs.pop_front().unwrap_or(0);
-                    this.consumed = buf.len();
-                }
-                None => {
-                    this.first_done = true;
-                    return Pin::new(&mut this.inner).poll_write(cx, buf);
-                }
-            }
-        }
-
-        loop {
-            if let Some(d) = this.delay.as_mut() {
-                match d.as_mut().poll(cx) {
-                    Poll::Ready(()) => this.delay = None,
-                    Poll::Pending => return Poll::Pending,
-                }
-            }
-            if this.seg_left == 0 {
-                match this.segs.pop_front() {
-                    Some(n) => this.seg_left = n,
-                    None => {
-                        this.first_done = true;
-                        this.pending = Vec::new();
-                        let n = this.consumed.min(buf.len().max(1));
-                        return Poll::Ready(Ok(n));
-                    }
-                }
-            }
-            let end = this.off + this.seg_left;
-            match Pin::new(&mut this.inner).poll_write(cx, &this.pending[this.off..end]) {
-                Poll::Ready(Ok(0)) => {
-                    return Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::WriteZero,
-                        "desync write zero",
-                    )))
-                }
-                Poll::Ready(Ok(w)) => {
-                    this.off += w;
-                    this.seg_left -= w;
-                    if this.seg_left == 0 && !this.segs.is_empty() {
-                        // Пауза между сегментами, чтобы ядро не склеило их
-                        // и DPI получил разрезанные пакеты по отдельности.
-                        let ms = DPI_SEGMENT_DELAY_MS.load(Ordering::Relaxed).max(0) as u64;
-                        if ms > 0 {
-                            this.delay =
-                                Some(Box::pin(tokio::time::sleep(Duration::from_millis(ms))));
-                        }
-                    }
-                }
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                Poll::Pending => return Poll::Pending,
-            }
-        }
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.inner).poll_shutdown(cx)
-    }
-}
-
-pub type UpstreamStream = DesyncStream<TcpStream>;
-pub type UpstreamTlsStream = TlsStream<UpstreamStream>;
-
-pub enum UpstreamConn {
-    Tls(UpstreamTlsStream),
-    Plain(UpstreamStream),
-}
-
-impl AsyncRead for UpstreamConn {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            UpstreamConn::Tls(s) => Pin::new(s).poll_read(cx, buf),
-            UpstreamConn::Plain(s) => Pin::new(s).poll_read(cx, buf),
-        }
-    }
-}
-
-impl AsyncWrite for UpstreamConn {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<std::io::Result<usize>> {
-        match self.get_mut() {
-            UpstreamConn::Tls(s) => Pin::new(s).poll_write(cx, buf),
-            UpstreamConn::Plain(s) => Pin::new(s).poll_write(cx, buf),
-        }
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            UpstreamConn::Tls(s) => Pin::new(s).poll_flush(cx),
-            UpstreamConn::Plain(s) => Pin::new(s).poll_flush(cx),
-        }
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        match self.get_mut() {
-            UpstreamConn::Tls(s) => Pin::new(s).poll_shutdown(cx),
-            UpstreamConn::Plain(s) => Pin::new(s).poll_shutdown(cx),
-        }
-    }
-}
-
-pub async fn connect_socks5(
-    proxy_port: u16,
-    target_host: &str,
-    target_port: u16,
-) -> std::io::Result<TcpStream> {
-    let proxy_addr = format!("127.0.0.1:{}", proxy_port);
-    let mut stream = TcpStream::connect(&proxy_addr).await?;
-    let _ = stream.set_nodelay(true);
-
-    // 1. Send SOCKS5 greeting
-    stream.write_all(&[0x05, 0x01, 0x00]).await?;
-    let mut auth_resp = [0u8; 2];
-    stream.read_exact(&mut auth_resp).await?;
-    if auth_resp[0] != 0x05 || auth_resp[1] != 0x00 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "SOCKS5 auth failed",
-        ));
-    }
-
-    // 2. Send CONNECT request
-    let mut req = Vec::with_capacity(32);
-    req.extend_from_slice(&[0x05, 0x01, 0x00]); // VER, CMD (CONNECT), RSV
-
-    if let Ok(ip) = target_host.parse::<std::net::IpAddr>() {
-        match ip {
-            std::net::IpAddr::V4(v4) => {
-                req.push(0x01); // ATYP IPv4
-                req.extend_from_slice(&v4.octets());
-            }
-            std::net::IpAddr::V6(v6) => {
-                req.push(0x04); // ATYP IPv6
-                req.extend_from_slice(&v6.octets());
-            }
-        }
-    } else {
-        req.push(0x03); // ATYP DOMAINNAME
-        req.push(target_host.len() as u8);
-        req.extend_from_slice(target_host.as_bytes());
-    }
-    req.extend_from_slice(&target_port.to_be_bytes());
-
-    stream.write_all(&req).await?;
-
-    // 3. Read response: [VER, REP, RSV, ATYP, BND.ADDR, BND.PORT]
-    let mut header = [0u8; 4];
-    stream.read_exact(&mut header).await?;
-    if header[1] != 0x00 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            format!("SOCKS5 connect rejected: status 0x{:02x}", header[1]),
-        ));
-    }
-
-    // Drain bound address and port
-    match header[3] {
-        0x01 => {
-            let mut addr = [0u8; 4 + 2]; // IPv4 + port
-            stream.read_exact(&mut addr).await?;
-        }
-        0x04 => {
-            let mut addr = [0u8; 16 + 2]; // IPv6 + port
-            stream.read_exact(&mut addr).await?;
-        }
-        0x03 => {
-            let mut len = [0u8; 1];
-            stream.read_exact(&mut len).await?;
-            let mut domain_buf = vec![0u8; len[0] as usize + 2];
-            stream.read_exact(&mut domain_buf).await?;
-        }
-        _ => {}
-    }
-
-    Ok(stream)
-}
-
-// ---------------------------------------------------------------------------
 // RawWebSocket
 // ---------------------------------------------------------------------------
 
 pub struct RawWebSocket {
-    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<UpstreamConn>>>,
-    writer: tokio::sync::Mutex<tokio::io::WriteHalf<UpstreamConn>>,
+    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>>,
+    writer: tokio::sync::Mutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
     frag: tokio::sync::Mutex<Vec<u8>>,
     pub closed: AtomicBool,
 }
@@ -724,7 +338,7 @@ impl RawWebSocket {
 
 // Чтение одного фрейма из уже захваченного reader.
 async fn read_frame_locked(
-    reader: &mut BufReader<tokio::io::ReadHalf<UpstreamConn>>,
+    reader: &mut BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>,
 ) -> Result<(u8, Vec<u8>, bool), WsError> {
     let mut hdr = [0u8; 2];
     reader.read_exact(&mut hdr).await?;
@@ -868,71 +482,46 @@ fn server_name(domain: &str) -> ServerName<'static> {
         .unwrap_or_else(|_| ServerName::IpAddress("127.0.0.1".parse::<IpAddr>().unwrap().into()))
 }
 
-// ws_connect_once_full — support TLS, plain HTTP, custom SNI (domain fronting)
-pub async fn ws_connect_once_full(
+// wsConnectOnce — заголовки 1-в-1 как в Python raw_websocket.py (без User-Agent).
+pub async fn ws_connect_once(
     dial_addr: &str,
     domain: &str,
     path: &str,
     timeout: Duration,
-    sni_override: Option<&str>,
-    secure: bool,
 ) -> Result<RawWebSocket, WsError> {
     if dial_addr.is_empty() {
         return Err(WsError::Other("empty dial address".to_string()));
     }
 
-    let port: u16 = if secure { 443 } else { 80 };
-    let target_addr = format!("{}:{}", dial_addr, port);
-    let socks5_port = UPSTREAM_SOCKS5_PORT.load(Ordering::Relaxed);
+    let target_addr = format!("{}:443", dial_addr);
 
-    let raw_conn = if socks5_port > 0 {
-        match tokio::time::timeout(timeout, connect_socks5(socks5_port as u16, dial_addr, port)).await {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => return Err(WsError::Io(e)),
-            Err(_) => return Err(WsError::Timeout),
-        }
-    } else {
-        match tokio::time::timeout(timeout, TcpStream::connect(&target_addr)).await {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => return Err(WsError::Io(e)),
-            Err(_) => return Err(WsError::Timeout),
-        }
+    let raw_conn = match tokio::time::timeout(timeout, TcpStream::connect(&target_addr)).await {
+        Ok(Ok(c)) => c,
+        Ok(Err(e)) => return Err(WsError::Io(e)),
+        Err(_) => return Err(WsError::Timeout),
     };
     set_sock_opts(&raw_conn);
 
-    // Через внешний SOCKS5 (ByeDPI) десинхронизацию делает он сам —
-    // двойная обработка ClientHello ему только мешает.
-    let dpi_enabled = DPI_BYPASS_ENABLED.load(Ordering::Relaxed) && socks5_port <= 0;
-    let split_pos = DPI_SPLIT_POS.load(Ordering::Relaxed).max(0) as usize;
-    let mode = DPI_MODE.load(Ordering::Relaxed);
-    let desync_conn = DesyncStream::with_mode(raw_conn, dpi_enabled, mode, split_pos);
+    let connector = TlsConnector::from(TLS_CONFIG.clone());
+    let sni = server_name(domain);
 
-    let upstream_conn: UpstreamConn = if secure {
-        let connector = TlsConnector::from(TLS_CONFIG.clone());
-        let sni_name = sni_override.unwrap_or(domain);
-        let sni = server_name(sni_name);
-
-        let handshake_timeout = ws_handshake_timeout(timeout);
-        let tls_conn =
-            match tokio::time::timeout(handshake_timeout, connector.connect(sni, desync_conn)).await {
-                Ok(Ok(c)) => c,
-                Ok(Err(e)) => {
-                    if e.kind() != std::io::ErrorKind::ConnectionReset {
-                        ldebug!(" ws tls fail {} via {}: {}", domain, dial_addr, e);
-                    }
-                    return Err(WsError::Io(e));
+    let handshake_timeout = ws_handshake_timeout(timeout);
+    let tls_conn =
+        match tokio::time::timeout(handshake_timeout, connector.connect(sni, raw_conn)).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
+                if e.kind() != std::io::ErrorKind::ConnectionReset {
+                    ldebug!(" ws tls fail {} via {}: {}", domain, dial_addr, e);
                 }
-                Err(_) => {
-                    ldebug!(" ws tls fail {} via {}: timeout", domain, dial_addr);
-                    return Err(WsError::Timeout);
-                }
-            };
-        UpstreamConn::Tls(tls_conn)
-    } else {
-        UpstreamConn::Plain(desync_conn)
-    };
+                return Err(WsError::Io(e));
+            }
+            Err(_) => {
+                ldebug!(" ws tls fail {} via {}: timeout", domain, dial_addr);
+                return Err(WsError::Timeout);
+            }
+        };
 
-    let (read_half, mut write_half) = tokio::io::split(upstream_conn);
+    let (read_half, mut write_half) = tokio::io::split(tls_conn);
 
     // websocket key
     let mut ws_key_bytes = [0u8; 16];
@@ -950,12 +539,7 @@ pub async fn ws_connect_once_full(
         path, domain, ws_key
     );
 
-    match tokio::time::timeout(timeout, async {
-        write_half.write_all(req.as_bytes()).await?;
-        write_half.flush().await
-    })
-    .await
-    {
+    match tokio::time::timeout(timeout, write_half.write_all(req.as_bytes())).await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => return Err(WsError::Io(e)),
         Err(_) => return Err(WsError::Timeout),
@@ -1030,34 +614,6 @@ pub async fn ws_connect_once_full(
     }))
 }
 
-pub async fn ws_connect_once(
-    dial_addr: &str,
-    domain: &str,
-    path: &str,
-    timeout: Duration,
-) -> Result<RawWebSocket, WsError> {
-    ws_connect_once_full(dial_addr, domain, path, timeout, None, true).await
-}
-
-pub async fn ws_connect_once_with_sni(
-    dial_addr: &str,
-    domain: &str,
-    path: &str,
-    timeout: Duration,
-    sni_override: Option<&str>,
-) -> Result<RawWebSocket, WsError> {
-    ws_connect_once_full(dial_addr, domain, path, timeout, sni_override, true).await
-}
-
-pub async fn ws_connect_once_http(
-    dial_addr: &str,
-    domain: &str,
-    path: &str,
-    timeout: Duration,
-) -> Result<RawWebSocket, WsError> {
-    ws_connect_once_full(dial_addr, domain, path, timeout, None, false).await
-}
-
 async fn read_line<R: AsyncReadExt + Unpin>(reader: &mut R) -> Result<String, WsError> {
     let mut buf = Vec::with_capacity(128);
     let mut byte = [0u8; 1];
@@ -1087,16 +643,6 @@ pub async fn ws_connect(
     path: &str,
     timeout: f64,
 ) -> Result<RawWebSocket, WsError> {
-    ws_connect_with_sni(ip, domain, path, timeout, None).await
-}
-
-pub async fn ws_connect_with_sni(
-    ip: &str,
-    domain: &str,
-    path: &str,
-    timeout: f64,
-    sni_override: Option<&str>,
-) -> Result<RawWebSocket, WsError> {
     let path = if path.is_empty() { "/apiws" } else { path };
     let attempt_timeout = ws_connect_timeout(timeout);
 
@@ -1106,13 +652,13 @@ pub async fn ws_connect_with_sni(
         ip.trim().to_string()
     };
 
-    match ws_connect_once_with_sni(&primary_addr, domain, path, attempt_timeout, sni_override).await {
-        Ok(ws) => Ok(ws),
+    match ws_connect_once(&primary_addr, domain, path, attempt_timeout).await {
+        Ok(ws) => return Ok(ws),
         Err(e) => {
             if primary_addr == domain && primary_addr.parse::<IpAddr>().is_err() {
                 if let Some(resolved) = crate::cfproxy::resolve_doh(domain).await {
                     if !resolved.is_empty() && resolved != primary_addr {
-                        return ws_connect_once_with_sni(&resolved, domain, path, attempt_timeout, sni_override).await;
+                        return ws_connect_once(&resolved, domain, path, attempt_timeout).await;
                     }
                 }
             }
@@ -1121,73 +667,12 @@ pub async fn ws_connect_with_sni(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Happy-eyeballs: прямое подключение стартует сразу, фронтинг-SNI —
-// с задержкой и только если прямое ещё не успело. Раньше фронтинг шёл
-// строго ДО прямого: 4 SNI x домены x до 6с = десятки секунд ожидания,
-// прежде чем вообще пробовался обычный путь.
-// ---------------------------------------------------------------------------
-
-pub const FRONTING_START_DELAY: Duration = Duration::from_millis(700);
-pub const FRONTING_STAGGER: Duration = Duration::from_millis(300);
-
-/// Возвращает первый успешный WS и ошибки ПРЯМЫХ попыток (для детекта 302).
-pub async fn race_ws_connect(
-    ip: &str,
-    domains: &[String],
-    direct_timeout: f64,
-) -> (Option<RawWebSocket>, Vec<WsError>) {
-    let mut set: tokio::task::JoinSet<(bool, Result<RawWebSocket, WsError>)> =
-        tokio::task::JoinSet::new();
-
-    for d in domains {
-        let ip = ip.to_string();
-        let d = d.clone();
-        set.spawn(async move {
-            (true, ws_connect(&ip, &d, "/apiws", direct_timeout).await)
-        });
-    }
-
-    if FRONTING_ENABLED.load(Ordering::Relaxed) {
-        let snis = FRONTING_DOMAINS.read().clone();
-        let front_timeout = direct_timeout.min(6.0);
-        let mut idx: u32 = 0;
-        for sni in snis {
-            for d in domains {
-                let delay = FRONTING_START_DELAY + FRONTING_STAGGER * idx;
-                idx += 1;
-                let ip = ip.to_string();
-                let d = d.clone();
-                let sni = sni.clone();
-                set.spawn(async move {
-                    tokio::time::sleep(delay).await;
-                    let r = ws_connect_with_sni(&ip, &d, "/apiws", front_timeout, Some(&sni)).await;
-                    if r.is_ok() {
-                        crate::linfo!(" DC connect ok via fronting SNI {} -> {}", sni, ip);
-                    } else if let Err(e) = &r {
-                        ldebug!(" fronting SNI {} -> {} failed: {}", sni, ip, e.compact());
-                    }
-                    (false, r)
-                });
-            }
-        }
-    }
-
-    let mut direct_errors = Vec::new();
-    while let Some(joined) = set.join_next().await {
-        match joined {
-            Ok((_, Ok(ws))) => {
-                set.abort_all();
-                return (Some(ws), direct_errors);
-            }
-            Ok((true, Err(e))) => direct_errors.push(e),
-            _ => {}
-        }
-    }
-    (None, direct_errors)
-}
-
-// connectOneWS: перебор доменов (для пула)
+// connectOneWS: перебор доменов
 pub async fn connect_one_ws(ip: &str, domains: &[String]) -> Option<RawWebSocket> {
-    race_ws_connect(ip, domains, WS_POOL_CONNECT_TIMEOUT).await.0
+    for d in domains {
+        if let Ok(ws) = ws_connect(ip, d, "/apiws", WS_POOL_CONNECT_TIMEOUT).await {
+            return Some(ws);
+        }
+    }
+    None
 }

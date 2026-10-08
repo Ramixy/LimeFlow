@@ -446,24 +446,28 @@ struct DohResponse {
 static DOH_CACHE: Lazy<parking_lot::RwLock<std::collections::HashMap<String, (String, Instant)>>> =
     Lazy::new(|| parking_lot::RwLock::new(std::collections::HashMap::new()));
 
-fn score_cf_ip(ip: &str) -> i32 {
-    if ip.starts_with("188.114.96.") || ip.starts_with("188.114.97.") {
-        100
-    } else if ip.starts_with("162.159.") || ip.starts_with("198.41.") || ip.starts_with("197.234.") {
-        80
-    } else if ip.starts_with("172.67.") {
-        40
-    } else if ip.starts_with("104.21.") {
-        20
-    } else {
-        50
+fn pick_preferred_ip(candidates: &[String]) -> String {
+    let mut fallback_v6 = String::new();
+    for c in candidates {
+        let c = c.trim();
+        if let Ok(ip) = c.parse::<std::net::IpAddr>() {
+            match ip {
+                std::net::IpAddr::V4(v4) => return v4.to_string(),
+                std::net::IpAddr::V6(v6) => {
+                    if fallback_v6.is_empty() {
+                        fallback_v6 = v6.to_string();
+                    }
+                }
+            }
+        }
     }
+    fallback_v6
 }
 
-pub async fn resolve_doh_candidates(domain: &str) -> Vec<String> {
+pub async fn resolve_doh(domain: &str) -> Option<String> {
     if let Some((ip, exp)) = DOH_CACHE.read().get(domain).cloned() {
         if Instant::now() < exp {
-            return vec![ip];
+            return Some(ip);
         }
     }
 
@@ -474,15 +478,12 @@ pub async fn resolve_doh_candidates(domain: &str) -> Vec<String> {
         "https://dns.adguard-dns.com/dns-query",
     ];
 
-    let client = match reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(1500))
         .build()
-    {
-        Ok(c) => c,
-        Err(_) => return vec!["188.114.97.3".to_string(), "188.114.96.3".to_string()],
-    };
+        .ok()?;
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel(endpoints.len() + 2);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(endpoints.len() + 1);
     let mut tasks = Vec::new();
 
     for u in endpoints {
@@ -500,8 +501,9 @@ pub async fn resolve_doh_candidates(domain: &str) -> Vec<String> {
                 if resp.status().as_u16() == 200 {
                     if let Ok(r) = resp.json::<DohResponse>().await {
                         for ans in r.answer {
-                            if ans.type_ == 1 && ans.data.parse::<std::net::Ipv4Addr>().is_ok() {
+                            if ans.type_ == 1 {
                                 let _ = tx.send(Some(ans.data)).await;
+                                return;
                             }
                         }
                     }
@@ -511,7 +513,7 @@ pub async fn resolve_doh_candidates(domain: &str) -> Vec<String> {
         }));
     }
 
-    // UDP-резолв через системный resolver
+    // UDP-резолв через системный resolver как дополнительный кандидат
     {
         let domain2 = domain.to_string();
         let tx = tx.clone();
@@ -523,69 +525,54 @@ pub async fn resolve_doh_candidates(domain: &str) -> Vec<String> {
             )
             .await
             {
-                for a in addrs {
-                    if let std::net::IpAddr::V4(v4) = a.ip() {
-                        let _ = tx.send(Some(v4.to_string())).await;
-                    }
+                let ips: Vec<String> = addrs.map(|a| a.ip().to_string()).collect();
+                let p = pick_preferred_ip(&ips);
+                if !p.is_empty() {
+                    let _ = tx.send(Some(p)).await;
+                    return;
                 }
             }
             let _ = tx.send(None).await;
         }));
     }
 
-    drop(tx);
+    drop(tx); // Чтобы rx.recv() завершился, когда все таски завершатся
 
     let deadline = tokio::time::sleep(Duration::from_millis(1500));
     tokio::pin!(deadline);
 
-    let mut collected = Vec::new();
+    let mut final_ip = None;
     loop {
         tokio::select! {
-            _ = &mut deadline => break,
+            _ = &mut deadline => {
+                break;
+            }
             msg = rx.recv() => {
                 match msg {
                     Some(Some(ip)) => {
-                        if !collected.contains(&ip) {
-                            collected.push(ip);
-                        }
+                        final_ip = Some(ip);
+                        break;
                     }
-                    Some(None) => {}
-                    None => break,
+                    Some(None) => {} // Таска ничего не нашла
+                    None => break,   // Все таски завершились
                 }
             }
         }
     }
 
+    // Отменяем все незавершенные фоновые таски (исправление утечки)
     for t in tasks {
         t.abort();
     }
 
-    // Add fallback clean Cloudflare IPs (very reliable against TSPU)
-    for fallback in ["188.114.97.3", "188.114.96.3"] {
-        let f = fallback.to_string();
-        if !collected.contains(&f) {
-            collected.push(f);
-        }
-    }
-
-    collected.sort_by_key(|ip| std::cmp::Reverse(score_cf_ip(ip)));
-
-    if let Some(best) = collected.first() {
+    if let Some(ip) = &final_ip {
         DOH_CACHE.write().insert(
             domain.to_string(),
-            (best.clone(), Instant::now() + Duration::from_secs(300)),
+            (ip.clone(), Instant::now() + Duration::from_secs(300)),
         );
     }
-
-    collected
-}
-
-pub async fn resolve_doh(domain: &str) -> Option<String> {
-    resolve_doh_candidates(domain).await.into_iter().next()
-}
-
-pub fn clear_doh_cache() {
-    DOH_CACHE.write().clear();
+    
+    final_ip
 }
 
 // ---------------------------------------------------------------------------
@@ -616,7 +603,6 @@ pub async fn cf_connect_domain(
         phase_timeout = CFPROXY_DIAL_PHASE_TIMEOUT;
     }
 
-    // 1. Try host direct on port 443
     let host_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
     match ws_connect_once(domain, domain, path, host_timeout).await {
         Ok(ws) => return (Some(ws), String::new(), None),
@@ -624,44 +610,17 @@ pub async fn cf_connect_domain(
             if is_http_status_error(&host_err, 429) {
                 return (None, String::new(), Some(host_err));
             }
-
-            // 2. Try candidate IPs with ranked sorting (prioritizing 188.114.x.x clean ranges)
-            let candidates = resolve_doh_candidates(domain).await;
-            if candidates.is_empty() {
+            let resolved_ip = resolve_doh(domain).await.unwrap_or_default();
+            if resolved_ip.is_empty() {
                 ldebug!(" CF DNS {} -> no result", domain);
                 return (None, String::new(), Some(host_err));
             }
-
-            let mut last_err = host_err;
-            let mut tried_ip = String::new();
-
-            for ip in candidates.iter().take(3) {
-                tried_ip = ip.clone();
-                let ip_timeout = new_timed_attempt_timeout(phase_timeout, Duration::from_millis(3000));
-
-                // 2a. Try TLS on port 443
-                match ws_connect_once(ip, domain, path, ip_timeout).await {
-                    Ok(ws) => return (Some(ws), ip.clone(), None),
-                    Err(e) => {
-                        if is_http_status_error(&e, 429) {
-                            return (None, ip.clone(), Some(e));
-                        }
-                    }
-                }
-
-                // 2b. If TLS fails/times out, try port 80 HTTP WS (bypasses TLS inspection completely)
-                match crate::ws::ws_connect_once_http(ip, domain, path, ip_timeout).await {
-                    Ok(ws) => {
-                        ldebug!(" CF ok {} via {} port 80 (HTTP WS)", domain, ip);
-                        return (Some(ws), ip.clone(), None);
-                    }
-                    Err(e) => {
-                        last_err = e;
-                    }
-                }
+            ldebug!(" CF DNS {} -> {}", domain, resolved_ip);
+            let ip_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
+            match ws_connect_once(&resolved_ip, domain, path, ip_timeout).await {
+                Ok(ws) => (Some(ws), resolved_ip, None),
+                Err(e) => (None, resolved_ip, Some(e)),
             }
-
-            (None, tried_ip, Some(last_err))
         }
     }
 }

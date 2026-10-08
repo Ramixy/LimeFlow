@@ -67,16 +67,8 @@ pub unsafe extern "C" fn StartProxy(
     let cell = state_cell();
     let mut guard = cell.lock();
 
-    if let Some(old_state) = guard.take() {
-        linfo!("StartProxy: cleaning up previous instance");
-        old_state.cancel_tasks.cancel();
-        let rt = runtime();
-        let pool = old_state.pool.clone();
-        let handle = old_state.handle;
-        rt.block_on(async move {
-            let _ = tokio::time::timeout(std::time::Duration::from_millis(500), handle).await;
-            pool.close_all().await;
-        });
+    if guard.is_some() {
+        return -1;
     }
 
     let host = cstr_to_string(c_host);
@@ -157,14 +149,7 @@ pub extern "C" fn StopProxy() -> c_int {
 
     let state = match guard.take() {
         Some(s) => s,
-        None => {
-            STATS.reset();
-            WS_BLACKLIST.write().clear();
-            DC_FAIL_UNTIL.write().clear();
-            cfproxy::clear_cfproxy_429_cooldowns();
-            cfproxy::clear_doh_cache();
-            return 0;
-        }
+        None => return -1,
     };
 
     // graceful shutdown — НЕ дропаем рантайм
@@ -186,7 +171,6 @@ pub extern "C" fn StopProxy() -> c_int {
     WS_BLACKLIST.write().clear();
     DC_FAIL_UNTIL.write().clear();
     cfproxy::clear_cfproxy_429_cooldowns();
-    cfproxy::clear_doh_cache();
 
     linfo!("StopProxy: exit");
     0
@@ -221,72 +205,13 @@ pub unsafe extern "C" fn SetCfProxyConfig(
     c_user_domain: *const c_char,
 ) {
     CFPROXY_ENABLED.store(enabled != 0, Ordering::Relaxed);
-    let user_domain_raw = cstr_to_string(c_user_domain);
+    let user_domain = cstr_to_string(c_user_domain);
     let mut cfg = CFPROXY.write();
-    cfg.user_domain = user_domain_raw.clone();
-    if !user_domain_raw.is_empty() {
-        let list: Vec<String> = user_domain_raw
-            .split(',')
-            .map(|s| cfproxy::normalize_cf_domain(s))
-            .filter(|s| !s.is_empty())
-            .collect();
-        if !list.is_empty() {
-            cfg.domains = list.clone();
-            cfg.active = list[0].clone();
-        } else {
-            cfg.domains = vec![user_domain_raw.clone()];
-            cfg.active = user_domain_raw;
-        }
+    cfg.user_domain = user_domain.clone();
+    if !user_domain.is_empty() {
+        cfg.domains = vec![user_domain.clone()];
+        cfg.active = user_domain;
     }
-}
-
-#[no_mangle]
-pub extern "C" fn SetDpiConfig(enabled: c_int, split_pos: c_int, socks5_port: c_int) {
-    DPI_BYPASS_ENABLED.store(enabled != 0, Ordering::Relaxed);
-    let mut pos = split_pos;
-    if pos <= 0 {
-        pos = 2;
-    }
-    DPI_SPLIT_POS.store(pos, Ordering::Relaxed);
-    UPSTREAM_SOCKS5_PORT.store(socks5_port, Ordering::Relaxed);
-}
-
-/// mode: 0 = split, 1 = SNI split, 2 = TLS record split (default).
-/// delay_ms: пауза между сегментами (0..200), <0 — не менять.
-#[no_mangle]
-pub extern "C" fn SetDpiMode(mode: c_int, delay_ms: c_int) {
-    let m = if (0..=2).contains(&mode) { mode } else { 2 };
-    DPI_MODE.store(m, Ordering::Relaxed);
-    if delay_ms >= 0 {
-        DPI_SEGMENT_DELAY_MS.store(delay_ms.min(200), Ordering::Relaxed);
-    }
-}
-
-/// # Safety
-/// `c_snis` — comma-separated custom fronting SNIs or null.
-#[no_mangle]
-pub unsafe extern "C" fn SetFrontingConfig(enabled: c_int, c_snis: *const c_char) {
-    FRONTING_ENABLED.store(enabled != 0, Ordering::Relaxed);
-    let snis_raw = cstr_to_string(c_snis);
-    if !snis_raw.is_empty() {
-        let list: Vec<String> = snis_raw
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if !list.is_empty() {
-            *FRONTING_DOMAINS.write() = list;
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn ResetProxyState() -> c_int {
-    cfproxy::clear_doh_cache();
-    cfproxy::clear_cfproxy_429_cooldowns();
-    WS_BLACKLIST.write().clear();
-    DC_FAIL_UNTIL.write().clear();
-    0
 }
 
 /// # Safety
@@ -323,4 +248,4 @@ pub unsafe extern "C" fn FreeString(p: *mut c_char) {
         return;
     }
     let _ = CString::from_raw(p);
-}
+}

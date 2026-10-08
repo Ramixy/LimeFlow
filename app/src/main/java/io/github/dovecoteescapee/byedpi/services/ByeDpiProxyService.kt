@@ -57,7 +57,8 @@ class ByeDpiProxyService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         startForeground()
         return when (val action = intent?.action) {
-            START_ACTION -> {
+            // null: sticky restart after the process was killed.
+            START_ACTION, null -> {
                 lifecycleScope.launch { start() }
                 START_STICKY
             }
@@ -69,6 +70,7 @@ class ByeDpiProxyService : LifecycleService() {
 
             else -> {
                 AppLog.w(TAG, "Unknown action: $action")
+                if (status != ServiceStatus.Connected) lifecycleScope.launch { stop() }
                 START_NOT_STICKY
             }
         }
@@ -83,9 +85,17 @@ class ByeDpiProxyService : LifecycleService() {
         }
 
         try {
-            mutex.withLock {
+            val started = mutex.withLock {
+                // Duplicate start while starting would fail on "Proxy fields
+                // not null" and tear the fresh proxy down.
+                if (status == ServiceStatus.Connected || proxyJob != null) {
+                    AppLog.w(TAG, "Start already in progress")
+                    return@withLock false
+                }
                 startProxy()
+                true
             }
+            if (!started) return
             updateStatus(ServiceStatus.Connected)
         } catch (error: Throwable) {
             if (error is CancellationException) throw error

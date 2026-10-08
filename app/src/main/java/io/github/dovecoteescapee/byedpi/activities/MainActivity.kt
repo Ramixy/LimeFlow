@@ -284,6 +284,11 @@ class MainActivity : AppCompatActivity() {
     private fun handleLimeFlowDeeplink(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.scheme != DEEPLINK_SCHEME) return
+        // Consume the link: recreate() (theme/palette change, rotation) and
+        // relaunching from Recents redeliver the same intent, which used to
+        // fire "toggle" again and switch the connection off by itself.
+        intent.data = null
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         when (data.host) {
             "connect" -> {
                 val (status, _) = appStatus

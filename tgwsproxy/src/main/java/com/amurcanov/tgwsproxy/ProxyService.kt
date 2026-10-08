@@ -8,10 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -45,16 +41,11 @@ class ProxyService : Service() {
     private var lastCfPriority: Boolean = true
     private var lastCfDomain: String = ""
     private var lastSecretKey: String = ""
-    private var lastDpiBypassEnabled: Boolean = true
-    private var lastDpiSplitPos: Int = 2
-    private var lastUpstreamSocks5Port: Int = 0
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     companion object {
         const val ACTION_START = "com.amurcanov.tgwsproxy.START"
         const val ACTION_STOP = "com.amurcanov.tgwsproxy.STOP"
         const val ACTION_RESTART = "com.amurcanov.tgwsproxy.RESTART"
-        const val ACTION_FORCE_RESET = "com.amurcanov.tgwsproxy.FORCE_RESET"
         const val EXTRA_BIND_IP = "EXTRA_BIND_IP"
         const val EXTRA_PORT = "EXTRA_PORT"
         const val EXTRA_IPS = "EXTRA_IPS"
@@ -63,9 +54,6 @@ class ProxyService : Service() {
         const val EXTRA_CFPROXY_PRIORITY = "EXTRA_CFPROXY_PRIORITY"
         const val EXTRA_CFPROXY_DOMAIN = "EXTRA_CFPROXY_DOMAIN"
         const val EXTRA_SECRET_KEY = "EXTRA_SECRET_KEY"
-        const val EXTRA_DPI_BYPASS_ENABLED = "EXTRA_DPI_BYPASS_ENABLED"
-        const val EXTRA_DPI_SPLIT_POS = "EXTRA_DPI_SPLIT_POS"
-        const val EXTRA_UPSTREAM_SOCKS5_PORT = "EXTRA_UPSTREAM_SOCKS5_PORT"
         
         private const val NOTIFICATION_ID = 101
         private const val CHANNEL_ID = "TG_WS_Proxy_Service_v4"
@@ -90,7 +78,6 @@ class ProxyService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -105,13 +92,7 @@ class ProxyService : Service() {
                 val cfPriority = intent.getBooleanExtra(EXTRA_CFPROXY_PRIORITY, true)
                 val cfDomain = intent.getStringExtra(EXTRA_CFPROXY_DOMAIN) ?: ""
                 val secretKey = intent.getStringExtra(EXTRA_SECRET_KEY) ?: ""
-                val dpiBypassEnabled = intent.getBooleanExtra(EXTRA_DPI_BYPASS_ENABLED, true)
-                val dpiSplitPos = intent.getIntExtra(EXTRA_DPI_SPLIT_POS, 2)
-                val upstreamSocks5Port = intent.getIntExtra(EXTRA_UPSTREAM_SOCKS5_PORT, 0)
-                startProxy(
-                    bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey,
-                    dpiBypassEnabled, dpiSplitPos, upstreamSocks5Port
-                )
+                startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
             }
             ACTION_STOP -> {
                 stopProxy()
@@ -119,18 +100,12 @@ class ProxyService : Service() {
             ACTION_RESTART -> {
                 restartProxy()
             }
-            ACTION_FORCE_RESET -> {
-                forceReset()
-            }
             null -> {
                 // Service restarted by system after being killed (START_REDELIVER_INTENT)
                 // If we had saved params, try to restart
                 if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
                     Log.w(TAG, "Service restarted by system, re-starting proxy")
-                    startProxy(
-                        lastBindIp, lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey,
-                        lastDpiBypassEnabled, lastDpiSplitPos, lastUpstreamSocks5Port
-                    )
+                    startProxy(lastBindIp, lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey)
                 } else {
                     stopSelf()
                 }
@@ -143,9 +118,7 @@ class ProxyService : Service() {
 
     private fun startProxy(bindIp: String, port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
-                           cfDomain: String = "", secretKey: String = "",
-                           dpiBypassEnabled: Boolean = true, dpiSplitPos: Int = 2,
-                           upstreamSocks5Port: Int = 0) {
+                           cfDomain: String = "", secretKey: String = "") {
         if (_isRunning.value || stopInProgress) return
 
         // Save params for restart
@@ -157,9 +130,6 @@ class ProxyService : Service() {
         lastCfPriority = cfPriority
         lastCfDomain = cfDomain
         lastSecretKey = secretKey
-        lastDpiBypassEnabled = dpiBypassEnabled
-        lastDpiSplitPos = dpiSplitPos
-        lastUpstreamSocks5Port = upstreamSocks5Port
         notificationStartedAtMs = System.currentTimeMillis()
         lastNotificationContent = getString(R.string.notification_starting)
         lastNotificationAtMs = notificationStartedAtMs
@@ -178,15 +148,13 @@ class ProxyService : Service() {
         acquireWakeLock()
         stopInProgress = false
         
-        // Start proxy in a separate thread with error handling
+        // Start Go proxy in a separate thread with error handling
         Thread({
             try {
                 NativeProxy.setPoolSize(poolSize)
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 CfDomainCache.ensureFresh(cacheDir)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
-                NativeProxy.setDpiConfig(dpiBypassEnabled, dpiSplitPos, upstreamSocks5Port)
-                NativeProxy.setFrontingConfig(false)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result != 0) {
                     Log.e(TAG, "StartProxy returned error code: $result")
@@ -321,46 +289,8 @@ class ProxyService : Service() {
                 cfEnabled = lastCfEnabled,
                 cfPriority = lastCfPriority,
                 cfDomain = lastCfDomain,
-                secretKey = lastSecretKey,
-                dpiBypassEnabled = lastDpiBypassEnabled,
-                dpiSplitPos = lastDpiSplitPos,
-                upstreamSocks5Port = lastUpstreamSocks5Port
+                secretKey = lastSecretKey
             )
-        }
-    }
-
-    private fun forceReset() {
-        if (restartJob?.isActive == true) return
-        serviceScope.launch {
-            Log.i(TAG, "Force reset proxy: clearing native caches and restarting")
-            updateNotification(getString(R.string.notification_restarting), force = true)
-
-            watchdogJob?.cancel()
-            watchdogJob = null
-            statsJob?.cancel()
-            statsJob = null
-
-            requestNativeStop("force_reset")
-            NativeProxy.resetProxyState()
-            releaseWakeLock()
-            updateRunningState(false)
-            delay(400)
-
-            if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
-                startProxy(
-                    bindIp = lastBindIp,
-                    port = lastPort,
-                    ips = lastIps,
-                    poolSize = lastPoolSize,
-                    cfEnabled = lastCfEnabled,
-                    cfPriority = lastCfPriority,
-                    cfDomain = lastCfDomain,
-                    secretKey = lastSecretKey,
-                    dpiBypassEnabled = lastDpiBypassEnabled,
-                    dpiSplitPos = lastDpiSplitPos,
-                    upstreamSocks5Port = lastUpstreamSocks5Port
-                )
-            }
         }
     }
 
@@ -571,45 +501,7 @@ class ProxyService : Service() {
             .build()
     }
 
-    private fun registerNetworkCallback() {
-        try {
-            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
-            val request = NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build()
-            val callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    Log.i(TAG, "Network became available ($network); resetting native DNS/state")
-                    NativeProxy.resetProxyState()
-                }
-
-                override fun onLost(network: Network) {
-                    Log.w(TAG, "Network lost ($network); clearing native caches")
-                    NativeProxy.resetProxyState()
-                }
-            }
-            networkCallback = callback
-            cm.registerNetworkCallback(request, callback)
-            Log.d(TAG, "Network callback registered")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to register network callback", e)
-        }
-    }
-
-    private fun unregisterNetworkCallback() {
-        try {
-            networkCallback?.let {
-                val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                cm?.unregisterNetworkCallback(it)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to unregister network callback", e)
-        }
-        networkCallback = null
-    }
-
     override fun onDestroy() {
-        unregisterNetworkCallback()
         restartJob?.cancel()
         restartJob = null
         watchdogJob?.cancel()
