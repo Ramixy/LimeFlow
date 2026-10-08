@@ -67,6 +67,10 @@ class SettingsStore(private val context: Context) {
         val DIRECT_DC_DEFAULTS_MIGRATED = booleanPreferencesKey("direct_dc_defaults_migrated")
         val DIRECT_DC_DEFAULTS_V2_MIGRATED = booleanPreferencesKey("direct_dc_defaults_v2_migrated")
         val UNIFIED_APPEARANCE_MIGRATED = booleanPreferencesKey("unified_appearance_migrated_v3")
+        val DPI_BYPASS_ENABLED = booleanPreferencesKey("dpi_bypass_enabled")
+        val DPI_SPLIT_POS = intPreferencesKey("dpi_split_pos")
+        val UPSTREAM_SOCKS5_ENABLED = booleanPreferencesKey("upstream_socks5_enabled")
+        val UPSTREAM_SOCKS5_PORT = intPreferencesKey("upstream_socks5_port")
     }
 
     val isReady: Flow<Boolean> = context.dataStore.data.map { true }
@@ -95,6 +99,10 @@ class SettingsStore(private val context: Context) {
     val customCfDomain: Flow<String> = context.dataStore.data.map { it[Keys.CUSTOM_CF_DOMAIN] ?: "" }
     val autoStartOnBoot: Flow<Boolean> = context.dataStore.data.map { it[Keys.AUTO_START_ON_BOOT] ?: false }
     val secretKey: Flow<String> = context.dataStore.data.map { it[Keys.SECRET_KEY] ?: "" }
+    val dpiBypassEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.DPI_BYPASS_ENABLED] ?: true }
+    val dpiSplitPos: Flow<Int> = context.dataStore.data.map { it[Keys.DPI_SPLIT_POS] ?: 2 }
+    val upstreamSocks5Enabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.UPSTREAM_SOCKS5_ENABLED] ?: false }
+    val upstreamSocks5Port: Flow<Int> = context.dataStore.data.map { it[Keys.UPSTREAM_SOCKS5_PORT] ?: 1080 }
 
     val logShowDebug: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_DEBUG] ?: false }
     val logShowInfo: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_INFO] ?: DEFAULT_LOG_SHOW_INFO }
@@ -285,5 +293,21 @@ class SettingsStore(private val context: Context) {
                 }
             }
         }
+    }
+
+    suspend fun saveDpiBypassEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DPI_BYPASS_ENABLED] = enabled }
+    }
+
+    suspend fun saveDpiSplitPos(pos: Int) {
+        context.dataStore.edit { it[Keys.DPI_SPLIT_POS] = pos }
+    }
+
+    suspend fun saveUpstreamSocks5Enabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.UPSTREAM_SOCKS5_ENABLED] = enabled }
+    }
+
+    suspend fun saveUpstreamSocks5Port(port: Int) {
+        context.dataStore.edit { it[Keys.UPSTREAM_SOCKS5_PORT] = port }
     }
 }

@@ -9,10 +9,12 @@ use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
 use rustls_pki_types::{CertificateDer, ServerName, UnixTime};
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
@@ -165,12 +167,152 @@ impl From<std::io::Error> for WsError {
 }
 
 // ---------------------------------------------------------------------------
+// DesyncStream & SOCKS5 upstream support for DPI circumvention
+// ---------------------------------------------------------------------------
+
+pub struct DesyncStream<S> {
+    inner: S,
+    split_pos: usize,
+    split_done: bool,
+}
+
+impl<S> DesyncStream<S> {
+    pub fn new(inner: S, split_pos: usize) -> Self {
+        Self {
+            inner,
+            split_pos,
+            split_done: split_pos == 0,
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for DesyncStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for DesyncStream<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        if !self.split_done && self.split_pos > 0 && buf.len() > self.split_pos {
+            let n = self.split_pos.min(buf.len());
+            match Pin::new(&mut self.inner).poll_write(cx, &buf[..n]) {
+                Poll::Ready(Ok(written)) => {
+                    if written > 0 {
+                        self.split_done = true;
+                    }
+                    Poll::Ready(Ok(written))
+                }
+                other => other,
+            }
+        } else {
+            Pin::new(&mut self.inner).poll_write(cx, buf)
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+pub type UpstreamStream = DesyncStream<TcpStream>;
+pub type UpstreamTlsStream = TlsStream<UpstreamStream>;
+
+pub async fn connect_socks5(
+    proxy_port: u16,
+    target_host: &str,
+    target_port: u16,
+) -> std::io::Result<TcpStream> {
+    let proxy_addr = format!("127.0.0.1:{}", proxy_port);
+    let mut stream = TcpStream::connect(&proxy_addr).await?;
+    let _ = stream.set_nodelay(true);
+
+    // 1. Send SOCKS5 greeting
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+    let mut auth_resp = [0u8; 2];
+    stream.read_exact(&mut auth_resp).await?;
+    if auth_resp[0] != 0x05 || auth_resp[1] != 0x00 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "SOCKS5 auth failed",
+        ));
+    }
+
+    // 2. Send CONNECT request
+    let mut req = Vec::with_capacity(32);
+    req.extend_from_slice(&[0x05, 0x01, 0x00]); // VER, CMD (CONNECT), RSV
+
+    if let Ok(ip) = target_host.parse::<std::net::IpAddr>() {
+        match ip {
+            std::net::IpAddr::V4(v4) => {
+                req.push(0x01); // ATYP IPv4
+                req.extend_from_slice(&v4.octets());
+            }
+            std::net::IpAddr::V6(v6) => {
+                req.push(0x04); // ATYP IPv6
+                req.extend_from_slice(&v6.octets());
+            }
+        }
+    } else {
+        req.push(0x03); // ATYP DOMAINNAME
+        req.push(target_host.len() as u8);
+        req.extend_from_slice(target_host.as_bytes());
+    }
+    req.extend_from_slice(&target_port.to_be_bytes());
+
+    stream.write_all(&req).await?;
+
+    // 3. Read response: [VER, REP, RSV, ATYP, BND.ADDR, BND.PORT]
+    let mut header = [0u8; 4];
+    stream.read_exact(&mut header).await?;
+    if header[1] != 0x00 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            format!("SOCKS5 connect rejected: status 0x{:02x}", header[1]),
+        ));
+    }
+
+    // Drain bound address and port
+    match header[3] {
+        0x01 => {
+            let mut addr = [0u8; 4 + 2]; // IPv4 + port
+            stream.read_exact(&mut addr).await?;
+        }
+        0x04 => {
+            let mut addr = [0u8; 16 + 2]; // IPv6 + port
+            stream.read_exact(&mut addr).await?;
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            stream.read_exact(&mut len).await?;
+            let mut domain_buf = vec![0u8; len[0] as usize + 2];
+            stream.read_exact(&mut domain_buf).await?;
+        }
+        _ => {}
+    }
+
+    Ok(stream)
+}
+
+// ---------------------------------------------------------------------------
 // RawWebSocket
 // ---------------------------------------------------------------------------
 
 pub struct RawWebSocket {
-    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>>,
-    writer: tokio::sync::Mutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<UpstreamTlsStream>>>,
+    writer: tokio::sync::Mutex<tokio::io::WriteHalf<UpstreamTlsStream>>,
     frag: tokio::sync::Mutex<Vec<u8>>,
     pub closed: AtomicBool,
 }
@@ -338,7 +480,7 @@ impl RawWebSocket {
 
 // Чтение одного фрейма из уже захваченного reader.
 async fn read_frame_locked(
-    reader: &mut BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>,
+    reader: &mut BufReader<tokio::io::ReadHalf<UpstreamTlsStream>>,
 ) -> Result<(u8, Vec<u8>, bool), WsError> {
     let mut hdr = [0u8; 2];
     reader.read_exact(&mut hdr).await?;
@@ -494,11 +636,20 @@ pub async fn ws_connect_once(
     }
 
     let target_addr = format!("{}:443", dial_addr);
+    let socks5_port = UPSTREAM_SOCKS5_PORT.load(Ordering::Relaxed);
 
-    let raw_conn = match tokio::time::timeout(timeout, TcpStream::connect(&target_addr)).await {
-        Ok(Ok(c)) => c,
-        Ok(Err(e)) => return Err(WsError::Io(e)),
-        Err(_) => return Err(WsError::Timeout),
+    let raw_conn = if socks5_port > 0 {
+        match tokio::time::timeout(timeout, connect_socks5(socks5_port as u16, dial_addr, 443)).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => return Err(WsError::Io(e)),
+            Err(_) => return Err(WsError::Timeout),
+        }
+    } else {
+        match tokio::time::timeout(timeout, TcpStream::connect(&target_addr)).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => return Err(WsError::Io(e)),
+            Err(_) => return Err(WsError::Timeout),
+        }
     };
     set_sock_opts(&raw_conn);
 
@@ -506,8 +657,16 @@ pub async fn ws_connect_once(
     let sni = server_name(domain);
 
     let handshake_timeout = ws_handshake_timeout(timeout);
+    let dpi_enabled = DPI_BYPASS_ENABLED.load(Ordering::Relaxed);
+    let split_pos = if dpi_enabled {
+        DPI_SPLIT_POS.load(Ordering::Relaxed).max(1) as usize
+    } else {
+        0
+    };
+    let desync_conn = DesyncStream::new(raw_conn, split_pos);
+
     let tls_conn =
-        match tokio::time::timeout(handshake_timeout, connector.connect(sni, raw_conn)).await {
+        match tokio::time::timeout(handshake_timeout, connector.connect(sni, desync_conn)).await {
             Ok(Ok(c)) => c,
             Ok(Err(e)) => {
                 if e.kind() != std::io::ErrorKind::ConnectionReset {

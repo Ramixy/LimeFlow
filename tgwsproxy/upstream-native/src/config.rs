@@ -41,6 +41,11 @@ pub static SEND_BUF: AtomicI32 = AtomicI32::new(DEFAULT_SEND_BUF as i32);
 pub static POOL_SIZE: AtomicI32 = AtomicI32::new(DEFAULT_POOL_SZ);
 pub static LOG_VERBOSE: AtomicBool = AtomicBool::new(false);
 
+// DPI bypass & desync config
+pub static DPI_BYPASS_ENABLED: AtomicBool = AtomicBool::new(true);
+pub static DPI_SPLIT_POS: AtomicI32 = AtomicI32::new(2);
+pub static UPSTREAM_SOCKS5_PORT: AtomicI32 = AtomicI32::new(0);
+
 #[derive(Clone)]
 pub struct Cfproxy429State {
     pub until: Option<Instant>,

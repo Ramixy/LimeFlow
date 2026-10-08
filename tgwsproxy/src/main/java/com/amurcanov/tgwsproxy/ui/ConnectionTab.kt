@@ -331,6 +331,25 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                             )
                         }
 
+                        if (isRunning) {
+                            OutlinedButton(
+                                onClick = {
+                                    ProxyController.forceReset(context)
+                                    Toast.makeText(context, R.string.notification_restarting, Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                shape = RoundedCornerShape(22.dp)
+                            ) {
+                                Text(
+                                    stringResource(R.string.notification_restart),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
                         ProxyStatusPanel(
                             cfEnabled = savedCfEnabled,
                             poolSize = savedPoolSize,

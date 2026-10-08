@@ -76,6 +76,12 @@ object ProxyController {
                     if (customCfDomainEnabled && cfEnabled) customCfDomain else ""
                 )
                 putExtra(ProxyService.EXTRA_SECRET_KEY, secretKey)
+                putExtra(ProxyService.EXTRA_DPI_BYPASS_ENABLED, settingsStore.dpiBypassEnabled.first())
+                putExtra(ProxyService.EXTRA_DPI_SPLIT_POS, settingsStore.dpiSplitPos.first())
+                putExtra(
+                    ProxyService.EXTRA_UPSTREAM_SOCKS5_PORT,
+                    if (settingsStore.upstreamSocks5Enabled.first()) settingsStore.upstreamSocks5Port.first() else 0
+                )
             }
         )
         ProxyTileSync.request(context)
@@ -86,6 +92,16 @@ object ProxyController {
         context.startService(
             Intent(context, ProxyService::class.java).apply {
                 action = ProxyService.ACTION_STOP
+            }
+        )
+        ProxyTileSync.request(context)
+    }
+
+    fun forceReset(context: Context) {
+        NativeProxy.resetProxyState()
+        context.startService(
+            Intent(context, ProxyService::class.java).apply {
+                action = ProxyService.ACTION_FORCE_RESET
             }
         )
         ProxyTileSync.request(context)

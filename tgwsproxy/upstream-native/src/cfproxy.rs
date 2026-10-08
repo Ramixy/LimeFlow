@@ -575,6 +575,10 @@ pub async fn resolve_doh(domain: &str) -> Option<String> {
     final_ip
 }
 
+pub fn clear_doh_cache() {
+    DOH_CACHE.write().clear();
+}
+
 // ---------------------------------------------------------------------------
 // cfConnectDomain
 // ---------------------------------------------------------------------------

@@ -512,11 +512,23 @@ pub async fn tcp_fallback(
     cancel_token: CancellationToken,
 ) -> bool {
     let addr = format!("{}:{}", dst, port);
-    let mut remote =
+    let socks5_port = UPSTREAM_SOCKS5_PORT.load(Ordering::Relaxed);
+    let mut remote = if socks5_port > 0 {
+        match tokio::time::timeout(
+            Duration::from_secs(10),
+            crate::ws::connect_socks5(socks5_port as u16, dst, port),
+        )
+        .await
+        {
+            Ok(Ok(r)) => r,
+            _ => return false,
+        }
+    } else {
         match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr)).await {
             Ok(Ok(r)) => r,
             _ => return false,
-        };
+        }
+    };
     let _ = remote.set_nodelay(true);
 
     STATS.connections_tcp_fallback.fetch_add(1, Ordering::Relaxed);
