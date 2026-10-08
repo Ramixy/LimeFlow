@@ -161,10 +161,19 @@ impl WsPool {
             }
         }
 
-        if state
-            .refilling
-            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+        // Не долбим DC, который только что не отвечал: пул всё равно
+        // ничего не наберёт, а лишние TLS-хендшейки только привлекают DPI.
+        let cooling = DC_FAIL_UNTIL
+            .read()
+            .get(&(dc, is_media_int(is_media)))
+            .copied()
+            .unwrap_or(0.0)
+            > now_unix_f64();
+        if !cooling
+            && state
+                .refilling
+                .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
         {
             let pool = self.clone();
             let st = state.clone();
@@ -526,7 +535,10 @@ pub async fn tcp_fallback(
     } else {
         match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr)).await {
             Ok(Ok(r)) => r,
-            _ => return false,
+            _ => {
+                lwarn!(" DC{}{}: TCP {} недоступен", dc, media_tag(is_media), addr);
+                return false;
+            }
         }
     };
     let _ = remote.set_nodelay(true);
@@ -720,6 +732,9 @@ pub async fn do_fallback(
 
     let fallback_dst = resolve_fallback_target(dc, is_media);
     let use_cf = CFPROXY_ENABLED.load(Ordering::Relaxed);
+    if !use_cf {
+        lwarn!(" DC{}{}: CF-прокси выключен в настройках — пробую только TCP", dc, media_tag(is_media));
+    }
 
     if use_cf {
         // Сначала добываем WS через CF, conn не трогаем.
@@ -956,10 +971,30 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
     }
 
     let fail_until = DC_FAIL_UNTIL.read().get(&dc_key).copied().unwrap_or(0.0);
+    // DC недавно не ответил (типично: IP Telegram заблокирован у оператора) —
+    // не ждём очередной таймаут WS, сразу идём через Cloudflare.
+    if now < fail_until && CFPROXY_ENABLED.load(Ordering::Relaxed) {
+        ldebug!(" DC{}{} в cooldown — сразу CF", dc, m_tag);
+        do_fallback(
+            conn,
+            &relay_init,
+            label,
+            dc,
+            is_media,
+            splitter,
+            &clt_decryptor,
+            &clt_encryptor,
+            &tg_encryptor,
+            &tg_decryptor,
+            cancel_token,
+        )
+        .await;
+        return;
+    }
     let ws_timeout = if now < fail_until {
         WS_FAIL_TIMEOUT
     } else {
-        10.0
+        4.0
     };
 
     let domains = ws_domains(dc, is_media);
@@ -1094,43 +1129,17 @@ pub async fn connect_direct_ws(
     if domains.is_empty() {
         return (None, false, false);
     }
-    let mut ws_failed_redirect = false;
-    let mut all_redirects = true;
-
-    // 1. Try with domain fronting first (sprinthost.ru, vk.com, yandex.ru - as in desktop TgWsProxy)
-    if FRONTING_ENABLED.load(Ordering::Relaxed) {
-        let fronting_snis = FRONTING_DOMAINS.read().clone();
-        for sni in &fronting_snis {
-            for dom in domains {
-                match ws_connect_with_sni(target, dom, "/apiws", timeout.min(6.0), Some(sni)).await {
-                    Ok(ws) => {
-                        linfo!(" DC connect ok via fronting SNI {} -> {}", sni, target);
-                        return (Some(ws), false, false);
-                    }
-                    Err(e) => {
-                        ldebug!(" fronting SNI {} -> {} failed: {}", sni, target, e.compact());
-                    }
-                }
-            }
-        }
+    let (ws, direct_errors) = race_ws_connect(target, domains, timeout).await;
+    if ws.is_some() {
+        return (ws, false, false);
     }
-
-    // 2. Direct without fronting
-    for dom in domains {
-        match ws_connect(target, dom, "/apiws", timeout).await {
-            Ok(ws) => return (Some(ws), ws_failed_redirect, false),
-            Err(e) => {
-                STATS.ws_errors.fetch_add(1, Ordering::Relaxed);
-                if let Some(h) = e.handshake() {
-                    if h.is_redirect() {
-                        ws_failed_redirect = true;
-                    } else {
-                        all_redirects = false;
-                    }
-                } else {
-                    all_redirects = false;
-                }
-            }
+    let mut ws_failed_redirect = false;
+    let mut all_redirects = !direct_errors.is_empty();
+    for e in &direct_errors {
+        STATS.ws_errors.fetch_add(1, Ordering::Relaxed);
+        match e.handshake() {
+            Some(h) if h.is_redirect() => ws_failed_redirect = true,
+            _ => all_redirects = false,
         }
     }
     (None, ws_failed_redirect, all_redirects)

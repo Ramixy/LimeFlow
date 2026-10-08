@@ -251,6 +251,17 @@ pub extern "C" fn SetDpiConfig(enabled: c_int, split_pos: c_int, socks5_port: c_
     UPSTREAM_SOCKS5_PORT.store(socks5_port, Ordering::Relaxed);
 }
 
+/// mode: 0 = split, 1 = SNI split, 2 = TLS record split (default).
+/// delay_ms: пауза между сегментами (0..200), <0 — не менять.
+#[no_mangle]
+pub extern "C" fn SetDpiMode(mode: c_int, delay_ms: c_int) {
+    let m = if (0..=2).contains(&mode) { mode } else { 2 };
+    DPI_MODE.store(m, Ordering::Relaxed);
+    if delay_ms >= 0 {
+        DPI_SEGMENT_DELAY_MS.store(delay_ms.min(200), Ordering::Relaxed);
+    }
+}
+
 /// # Safety
 /// `c_snis` — comma-separated custom fronting SNIs or null.
 #[no_mangle]
@@ -312,4 +323,4 @@ pub unsafe extern "C" fn FreeString(p: *mut c_char) {
         return;
     }
     let _ = CString::from_raw(p);
-}
+}

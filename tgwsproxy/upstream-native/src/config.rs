@@ -14,7 +14,7 @@ pub const DEFAULT_RECV_BUF: usize = 256 * 1024;
 pub const DEFAULT_SEND_BUF: usize = 256 * 1024;
 pub const DEFAULT_POOL_SZ: i32 = 4;
 
-pub const DC_FAIL_COOLDOWN: f64 = 30.0;
+pub const DC_FAIL_COOLDOWN: f64 = 180.0;
 pub const WS_FAIL_TIMEOUT: f64 = 2.0;
 
 pub const BRIDGE_READ_TIMEOUT: Duration = Duration::from_secs(120);
@@ -45,9 +45,14 @@ pub static LOG_VERBOSE: AtomicBool = AtomicBool::new(false);
 pub static DPI_BYPASS_ENABLED: AtomicBool = AtomicBool::new(true);
 pub static DPI_SPLIT_POS: AtomicI32 = AtomicI32::new(2);
 pub static UPSTREAM_SOCKS5_PORT: AtomicI32 = AtomicI32::new(0);
+// 0 = split, 1 = SNI split, 2 = TLS record split + SNI split (по умолчанию)
+pub static DPI_MODE: AtomicI32 = AtomicI32::new(2);
+// Пауза между TCP-сегментами разрезанного ClientHello, мс
+pub static DPI_SEGMENT_DELAY_MS: AtomicI32 = AtomicI32::new(10);
 
 // Domain fronting config (sprinthost.ru, vk.com, yandex.ru as in desktop TgWsProxy)
-pub static FRONTING_ENABLED: AtomicBool = AtomicBool::new(true);
+// По умолчанию выключен: при блокировке IP Telegram подмена SNI бесполезна
+pub static FRONTING_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static FRONTING_DOMAINS: Lazy<RwLock<Vec<String>>> = Lazy::new(|| {
     RwLock::new(vec![
         "sprinthost.ru".to_string(),
@@ -327,4 +332,4 @@ pub fn now_unix() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
+}

@@ -84,13 +84,10 @@ object CfDomainCache {
         if (now - last < 5 * 60 * 1000L) return
         if (!lastFetchAttemptMs.compareAndSet(last, now)) return
 
-        val fresh = fetchDomainList(sync = true)
-        if (fresh != null) {
-            writeDomains(file, fresh)
-            return
-        }
-        // Both mirrors failed (offline / blocked): refresh in the background
-        // with longer timeouts so a later start still picks the list up.
+        // Never block engine start on GitHub: on networks where GitHub is
+        // blocked (Beeline etc.) a sync fetch stalled every start by up to
+        // 2 x (6s connect + 6s read). The seeded/cached list is used now,
+        // the fresh one is picked up on the next start.
         Thread {
             runCatching { fetchDomainList(sync = false)?.let { writeDomains(file, it) } }
         }.apply {
