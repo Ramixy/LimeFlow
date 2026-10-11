@@ -397,6 +397,23 @@ object FlowsealProfiles {
             badge = "Ozon",
         ),
         FlowsealProfile(
+            "limeflow_z_alt13",
+            "ZAPRET ALT13 MAIL",
+            "hostfakesplit mail.ru + google",
+            "Порт general (ALT13) 1.10.2, без root: для Google fake-копия ClientHello с хостом www.google.com, для остальных сайтов и Discord с хостом mail.ru",
+            profileArgs(
+                youtube = "-Qo -nwww.google.com -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qo -nmail.ru -f-204 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qo -nmail.ru -f-1 -t5 -s1+s -d3+s",
+                retry = retryDeep,
+                quicFakes = 11,
+                voiceFakes = 5,
+                hosts = hosts,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "mail.ru",
+        ),
+        FlowsealProfile(
             "limeflow_z_auto",
             "ZAPRET AUTO 1.10",
             "fake + multidisorder",
