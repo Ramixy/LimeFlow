@@ -40,6 +40,7 @@ class ProxyService : Service() {
     private var lastCfEnabled: Boolean = true
     private var lastCfPriority: Boolean = true
     private var lastCfDomain: String = ""
+    private var lastH2Enabled: Boolean = true
     private var lastSecretKey: String = ""
 
     companion object {
@@ -53,6 +54,7 @@ class ProxyService : Service() {
         const val EXTRA_CFPROXY_ENABLED = "EXTRA_CFPROXY_ENABLED"
         const val EXTRA_CFPROXY_PRIORITY = "EXTRA_CFPROXY_PRIORITY"
         const val EXTRA_CFPROXY_DOMAIN = "EXTRA_CFPROXY_DOMAIN"
+        const val EXTRA_CF_H2_ENABLED = "EXTRA_CF_H2_ENABLED"
         const val EXTRA_SECRET_KEY = "EXTRA_SECRET_KEY"
         
         private const val NOTIFICATION_ID = 101
@@ -92,6 +94,7 @@ class ProxyService : Service() {
                 val cfPriority = intent.getBooleanExtra(EXTRA_CFPROXY_PRIORITY, true)
                 val cfDomain = intent.getStringExtra(EXTRA_CFPROXY_DOMAIN) ?: ""
                 val secretKey = intent.getStringExtra(EXTRA_SECRET_KEY) ?: ""
+                lastH2Enabled = intent.getBooleanExtra(EXTRA_CF_H2_ENABLED, true)
                 startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
             }
             ACTION_STOP -> {
@@ -155,6 +158,7 @@ class ProxyService : Service() {
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 CfDomainCache.ensureFresh(cacheDir)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
+                NativeProxy.setH2Enabled(lastH2Enabled)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result != 0) {
                     Log.e(TAG, "StartProxy returned error code: $result")

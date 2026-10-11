@@ -12,8 +12,8 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 34
-        versionName = "1.5.3"
+        versionCode = 35
+        versionName = "1.5.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

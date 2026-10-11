@@ -93,6 +93,13 @@ static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
     Arc::new(cfg)
 });
 
+// Тот же конфиг, но с ALPN h2 — для CF HTTP/2 мультиплексирования медиа.
+pub static H2_TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
+    let mut cfg = (**TLS_CONFIG).clone();
+    cfg.alpn_protocols = vec![b"h2".to_vec()];
+    Arc::new(cfg)
+});
+
 // ---------------------------------------------------------------------------
 // WsHandshakeError
 // ---------------------------------------------------------------------------

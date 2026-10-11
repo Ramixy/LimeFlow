@@ -21,6 +21,7 @@
     <string name="connection">Connection</string>
     <string name="port">Port</string>
     <string name="auto_cf_enabled">Auto (CF enabled)</string>
+    <string name="cf_h2_media">Media multiplexing (HTTP/2)</string>
     <string name="configure_dc_addresses">Configure DC addresses</string>
     <string name="ws_pool">WS pool</string>
     <string name="secret_key">Secret key</string>
@@ -67,7 +68,7 @@
     <string name="help_auto_dc_title">Auto / data center addresses</string>
     <string name="help_auto_dc_text">When Cloudflare is enabled, manual DC addresses are usually not needed: the proxy uses the CF route. If Cloudflare is disabled, the connection goes directly to Telegram DCs, and you can set addresses manually. In normal mode DC2 and DC4 are usually enough; the other addresses are mainly for manual setup and diagnostics.</string>
     <string name="help_cloudflare_text">This mode routes the connection through WebSocket domains behind Cloudflare. It can be more stable on some mobile networks, but the result depends on routing, DNS, and the provider. If the connection became slower or less stable on your network, compare it with CF disabled.</string>
-    <string name="help_ws_pool_text">The number of pre-warmed WebSocket connections. A larger pool can reduce delay during the first connection and media loading, but increases background connections. For most cases 2-4 is enough; increase it only if you can see a real benefit on your network.</string>
+    <string name="help_ws_pool_text">The number of pre-warmed WebSocket connections. A larger pool can reduce delay during the first connection and media loading, but increases background connections. For most cases 4 or more (direct DC->IP now works only through the pool); increase it only if you can see a real benefit on your network.</string>
     <string name="help_secret_key_text">A special 16-byte MTProto encryption key. Change it only if someone else got access to your old connection link.</string>
     <string name="help_experimental_text">Opens manual setup for all regular and media data centers: DC1, DC3, DC5, DC203, and their media variants. It is useful for diagnostics, tests, and non-standard routes. If you do not explicitly need manual routing, keep this mode off.</string>
     <string name="help_autostart_text">Attempts to start the proxy automatically after device reboot. This is convenient if you use the local proxy all the time. On some firmware it may not start immediately: the system may finish it only after Android fully boots or after the first unlock.</string>

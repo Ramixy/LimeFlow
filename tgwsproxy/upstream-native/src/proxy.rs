@@ -6,10 +6,11 @@ use crate::{ldebug, linfo, lwarn};
 use byteorder::{ByteOrder, LittleEndian};
 use rand::RngCore;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use once_cell::sync::Lazy;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -94,7 +95,13 @@ pub struct PoolEntry {
 struct SlotState {
     queue: Mutex<std::collections::VecDeque<PoolEntry>>,
     refilling: AtomicI32,
+    // Экспоненциальный бэкофф после неудачного refill (1с .. 1ч), как в pool.py
+    refill_failures: AtomicI32,
+    refill_after: parking_lot::Mutex<Option<std::time::Instant>>,
 }
+
+const REFILL_BACKOFF_INITIAL: f64 = 1.0;
+const REFILL_BACKOFF_MAX: f64 = 3600.0;
 
 pub struct WsPool {
     slots: Mutex<HashMap<DcSlot, Arc<SlotState>>>,
@@ -116,9 +123,40 @@ impl WsPool {
                 Arc::new(SlotState {
                     queue: Mutex::new(std::collections::VecDeque::with_capacity(16)),
                     refilling: AtomicI32::new(0),
+                    refill_failures: AtomicI32::new(0),
+                    refill_after: parking_lot::Mutex::new(None),
                 })
             })
             .clone()
+    }
+
+    fn try_start_refill(
+        self: &Arc<Self>,
+        dc: i32,
+        is_media: bool,
+        state: &Arc<SlotState>,
+        target_ip: String,
+        domains: Vec<String>,
+    ) {
+        if POOL_SIZE.load(Ordering::Relaxed) <= 0 {
+            return;
+        }
+        if let Some(t) = *state.refill_after.lock() {
+            if std::time::Instant::now() < t {
+                return;
+            }
+        }
+        if state
+            .refilling
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            let pool = self.clone();
+            let st = state.clone();
+            tokio::spawn(async move {
+                pool.refill(dc, is_media, st, target_ip, domains).await;
+            });
+        }
     }
 
     pub async fn get(
@@ -128,6 +166,9 @@ impl WsPool {
         target_ip: String,
         domains: Vec<String>,
     ) -> Option<RawWebSocket> {
+        if POOL_SIZE.load(Ordering::Relaxed) <= 0 {
+            return None;
+        }
         let slot = DcSlot {
             dc,
             is_media: is_media_int(is_media),
@@ -161,23 +202,15 @@ impl WsPool {
             }
         }
 
-        if state
-            .refilling
-            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            let pool = self.clone();
-            let st = state.clone();
-            tokio::spawn(async move {
-                pool.refill(st, target_ip, domains).await;
-            });
-        }
+        self.try_start_refill(dc, is_media, &state, target_ip, domains);
 
         ws
     }
 
     async fn refill(
         self: Arc<Self>,
+        dc: i32,
+        is_media: bool,
         state: Arc<SlotState>,
         target_ip: String,
         domains: Vec<String>,
@@ -203,8 +236,10 @@ impl WsPool {
             }));
         }
 
+        let mut connected = 0;
         for h in handles {
             if let Ok(Some(ws)) = h.await {
+                connected += 1;
                 let now = now_unix();
                 let mut q = state.queue.lock().await;
                 if q.len() < 16 {
@@ -217,6 +252,23 @@ impl WsPool {
                     });
                 }
             }
+        }
+
+        if connected > 0 {
+            state.refill_failures.store(0, Ordering::Relaxed);
+            *state.refill_after.lock() = None;
+        } else if !self.cancel_token.is_cancelled() {
+            let failures = state.refill_failures.fetch_add(1, Ordering::Relaxed) + 1;
+            let delay = (REFILL_BACKOFF_INITIAL * 2f64.powi((failures - 1).min(12)))
+                .min(REFILL_BACKOFF_MAX);
+            *state.refill_after.lock() =
+                Some(std::time::Instant::now() + Duration::from_secs_f64(delay));
+            linfo!(
+                " WS пул DC{}{}: пополнить не удалось, повтор через {:.0}с",
+                dc,
+                media_tag(is_media),
+                delay
+            );
         }
 
         state.refilling.store(0, Ordering::SeqCst);
@@ -234,19 +286,7 @@ impl WsPool {
                     is_media: is_media_int(is_media),
                 };
                 let state = self.get_slot(slot).await;
-                if state
-                    .refilling
-                    .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
-                    .is_ok()
-                {
-                    let pool = self.clone();
-                    let st = state.clone();
-                    let ip = target_ip.clone();
-                    let doms = domains.clone();
-                    tokio::spawn(async move {
-                        pool.refill(st, ip, doms).await;
-                    });
-                }
+                self.try_start_refill(*dc, is_media, &state, target_ip.clone(), domains);
             }
         }
     }
@@ -497,6 +537,24 @@ pub async fn bridge_tcp(
 // TCP fallback
 // ---------------------------------------------------------------------------
 
+// Бэкофф недоступного TCP fallback (30с .. 1ч), чтобы не спамить попытками.
+const TCP_BACKOFF_INITIAL: f64 = 30.0;
+const TCP_BACKOFF_MAX: f64 = 3600.0;
+
+#[derive(Default)]
+struct TcpBackoff {
+    failures: HashMap<String, u32>,
+    retry_after: HashMap<String, Instant>,
+    connecting: HashSet<String>,
+}
+
+static TCP_BACKOFF: Lazy<parking_lot::Mutex<TcpBackoff>> =
+    Lazy::new(|| parking_lot::Mutex::new(TcpBackoff::default()));
+
+pub fn reset_tcp_backoff() {
+    *TCP_BACKOFF.lock() = TcpBackoff::default();
+}
+
 pub async fn tcp_fallback(
     client: TcpStream,
     dst: &str,
@@ -512,11 +570,38 @@ pub async fn tcp_fallback(
     cancel_token: CancellationToken,
 ) -> bool {
     let addr = format!("{}:{}", dst, port);
-    let mut remote =
-        match tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr)).await {
-            Ok(Ok(r)) => r,
-            _ => return false,
-        };
+    {
+        let backoff = TCP_BACKOFF.lock();
+        let retry = backoff.retry_after.get(&addr).map_or(false, |t| Instant::now() < *t);
+        if retry || backoff.connecting.contains(&addr) {
+            ldebug!(" TCP fallback {} пропущен (пауза или уже подключаемся)", addr);
+            return false;
+        }
+    }
+    TCP_BACKOFF.lock().connecting.insert(addr.clone());
+    let res = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr)).await;
+    let mut remote = {
+        let mut backoff = TCP_BACKOFF.lock();
+        backoff.connecting.remove(&addr);
+        match res {
+            Ok(Ok(r)) => {
+                backoff.failures.remove(&addr);
+                backoff.retry_after.remove(&addr);
+                r
+            }
+            _ => {
+                let failures = backoff.failures.entry(addr.clone()).or_insert(0);
+                *failures += 1;
+                let delay = (TCP_BACKOFF_INITIAL * 2f64.powi((*failures - 1).min(7) as i32))
+                    .min(TCP_BACKOFF_MAX);
+                backoff
+                    .retry_after
+                    .insert(addr.clone(), Instant::now() + Duration::from_secs_f64(delay));
+                lwarn!(" TCP fallback {} недоступен, пауза {:.0}с", addr, delay);
+                return false;
+            }
+        }
+    };
     let _ = remote.set_nodelay(true);
 
     STATS.connections_tcp_fallback.fetch_add(1, Ordering::Relaxed);
@@ -693,6 +778,7 @@ pub async fn do_fallback(
     label: String,
     dc: i32,
     is_media: bool,
+    proto: u32,
     splitter: Option<MsgSplitter>,
     clt_dec: &TrackedStream,
     clt_enc: &TrackedStream,
@@ -708,6 +794,16 @@ pub async fn do_fallback(
 
     let fallback_dst = resolve_fallback_target(dc, is_media);
     let use_cf = CFPROXY_ENABLED.load(Ordering::Relaxed);
+
+    if use_cf && is_media && H2_ENABLED.load(Ordering::Relaxed) {
+        // Медиа мультиплексируется в одно HTTP/2 соединение с CF.
+        if let Some(lane) = crate::cfh2::open(dc).await {
+            STATS.connections_h2.fetch_add(1, Ordering::Relaxed);
+            STATS.connections_cfproxy.fetch_add(1, Ordering::Relaxed);
+            crate::cfh2::bridge_h2(conn, lane, dc, proto, clt_dec, clt_enc, cancel_token).await;
+            return true;
+        }
+    }
 
     if use_cf {
         // Сначала добываем WS через CF, conn не трогаем.
@@ -932,6 +1028,7 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
             label,
             dc,
             is_media,
+            proto,
             splitter,
             &clt_decryptor,
             &clt_encryptor,
@@ -943,29 +1040,37 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
         return;
     }
 
-    let fail_until = DC_FAIL_UNTIL.read().get(&dc_key).copied().unwrap_or(0.0);
-    let ws_timeout = if now < fail_until {
-        WS_FAIL_TIMEOUT
-    } else {
-        10.0
+    // Прямое подключение DC->IP теперь только через пул WS (tg-ws-proxy 1.11):
+    // если в пуле нет готового сокета — сразу fallback (H2/CF/TCP).
+    let domains = ws_domains(dc, is_media);
+    let ws = match pool.get(dc, is_media, target.clone(), domains).await {
+        Some(w) => w,
+        None => {
+            ldebug!(" DC{}{}: пул WS пуст -> fallback", dc, m_tag);
+            let splitter_fb = MsgSplitter::new(&relay_init, proto);
+            do_fallback(
+                conn,
+                &relay_init,
+                label,
+                dc,
+                is_media,
+                proto,
+                splitter_fb,
+                &clt_decryptor,
+                &clt_encryptor,
+                &tg_encryptor,
+                &tg_decryptor,
+                cancel_token,
+            )
+            .await;
+            return;
+        }
     };
 
-    let domains = ws_domains(dc, is_media);
-    let (mut ws_opt, ws_failed_redirect, all_redirects) =
-        if let Some(w) = pool.get(dc, is_media, target.clone(), domains.clone()).await {
-            (Some(w), false, false)
-        } else {
-            connect_direct_ws(&target, &domains, ws_timeout).await
-        };
-
-    if ws_opt.is_none() {
-        lwarn!(" DC{}{}: все попытки WS провалены (DPI/Интернет)", dc, m_tag);
-        if ws_failed_redirect && all_redirects {
-            WS_BLACKLIST.write().insert(dc_key, true);
-            lwarn!(" DC{}{} заблокирован (302)", dc, m_tag);
-        } else {
-            DC_FAIL_UNTIL.write().insert(dc_key, now + DC_FAIL_COOLDOWN);
-        }
+    if ws.send(&relay_init).await.is_err() {
+        lwarn!(" direct relayInit write fail DC{}{}: closed -> fallback", dc, m_tag);
+        ws.close().await;
+        DC_FAIL_UNTIL.write().insert(dc_key, now + DC_FAIL_COOLDOWN);
         let splitter_fb = MsgSplitter::new(&relay_init, proto);
         do_fallback(
             conn,
@@ -973,6 +1078,7 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
             label,
             dc,
             is_media,
+            proto,
             splitter_fb,
             &clt_decryptor,
             &clt_encryptor,
@@ -983,73 +1089,7 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
         .await;
         return;
     }
-
-    // send direct init
-    let mut ws = ws_opt.take().unwrap();
-    let mut send_ok = ws.send(&relay_init).await.is_ok();
-    if send_ok {
-        ldebug!(" direct relayInit sent DC{}{}", dc, m_tag);
-    } else {
-        lwarn!(" direct relayInit write fail DC{}{}: closed", dc, m_tag);
-        ws.close().await;
-
-        DC_FAIL_UNTIL.write().insert(dc_key, now + DC_FAIL_COOLDOWN);
-
-        lwarn!(" direct retry fresh ws DC{}{}", dc, m_tag);
-        let (retry_ws, retry_failed_redirect, retry_all_redirects) =
-            connect_direct_ws(&target, &domains, ws_timeout).await;
-        match retry_ws {
-            None => {
-                if retry_failed_redirect && retry_all_redirects {
-                    WS_BLACKLIST.write().insert(dc_key, true);
-                    lwarn!(" DC{}{} заблокирован (302)", dc, m_tag);
-                }
-                lwarn!(" direct fallback DC{}{}", dc, m_tag);
-                let splitter_fb = MsgSplitter::new(&relay_init, proto);
-                do_fallback(
-                    conn,
-                    &relay_init,
-                    label,
-                    dc,
-                    is_media,
-                    splitter_fb,
-                    &clt_decryptor,
-                    &clt_encryptor,
-                    &tg_encryptor,
-                    &tg_decryptor,
-                    cancel_token,
-                )
-                .await;
-                return;
-            }
-            Some(rws) => {
-                if rws.send(&relay_init).await.is_err() {
-                    lwarn!(" direct relayInit write fail DC{}{}: closed", dc, m_tag);
-                    rws.close().await;
-                    lwarn!(" direct fallback DC{}{}", dc, m_tag);
-                    let splitter_fb = MsgSplitter::new(&relay_init, proto);
-                    do_fallback(
-                        conn,
-                        &relay_init,
-                        label,
-                        dc,
-                        is_media,
-                        splitter_fb,
-                        &clt_decryptor,
-                        &clt_encryptor,
-                        &tg_encryptor,
-                        &tg_decryptor,
-                        cancel_token,
-                    )
-                    .await;
-                    return;
-                }
-                ws = rws;
-                send_ok = true;
-            }
-        }
-    }
-    let _ = send_ok;
+    ldebug!(" direct relayInit sent DC{}{}", dc, m_tag);
 
     DC_FAIL_UNTIL.write().remove(&dc_key);
     let _ = &pool;

@@ -30,6 +30,7 @@ object ZapretStrategies {
         Triple("general (ALT10)", "ALT10", "fake с 4pda-подменой и ts-fooling"),
         Triple("general (ALT11)", "ALT11", "fake,multisplit seqovl=664 с max.ru-паттерном"),
         Triple("general (ALT12)", "ALT12", "fake,multisplit seqovl=664, ts-fooling"),
+        Triple("general (ALT13)", "ALT13", "hostfakesplit mail.ru (altorder) + fake sochi.park, google через hostfakesplit"),
         Triple("general (EXP)", "EXP", "экспериментальный: fake,multisplit со stun2-паттерном"),
         Triple("general (FAKE TLS AUTO)", "FAKE TLS AUTO", "fake,multidisorder split-pos=1,midsld, повторы 11"),
         Triple("general (FAKE TLS AUTO ALT)", "FAKE TLS AUTO ALT", "fake,fakedsplit с rnd,dupsid и google SNI"),

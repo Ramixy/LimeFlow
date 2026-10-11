@@ -91,6 +91,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
     val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
+    val h2Enabled by settingsStore.cfH2Enabled.collectAsStateWithLifecycle(initialValue = true)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
 
     if (!isReady) {
@@ -310,7 +311,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val poolOptions = listOf(2, 4, 6)
+                    val poolOptions = listOf(2, 4, 6, 8)
                     poolOptions.forEach { size ->
                         PoolChip(
                             label = "$size",
@@ -406,6 +407,25 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         scheduleSave()
                     },
                     enabled = !isRunning
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(com.amurcanov.tgwsproxy.R.string.cf_h2_media),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = h2Enabled,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveCfH2Enabled(enabled) }
+                    },
+                    enabled = cfEnabled && !isRunning
                 )
             }
 

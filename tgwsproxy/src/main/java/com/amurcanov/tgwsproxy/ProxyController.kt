@@ -71,6 +71,7 @@ object ProxyController {
                 putExtra(ProxyService.EXTRA_POOL_SIZE, poolSize)
                 putExtra(ProxyService.EXTRA_CFPROXY_ENABLED, cfEnabled)
                 putExtra(ProxyService.EXTRA_CFPROXY_PRIORITY, true)
+                putExtra(ProxyService.EXTRA_CF_H2_ENABLED, settingsStore.cfH2Enabled.first())
                 putExtra(
                     ProxyService.EXTRA_CFPROXY_DOMAIN,
                     if (customCfDomainEnabled && cfEnabled) customCfDomain else ""

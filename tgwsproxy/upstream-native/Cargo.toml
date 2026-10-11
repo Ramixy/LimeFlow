@@ -24,6 +24,9 @@ hex = "0.4"
 rand = "0.8"
 byteorder = "1"
 socket2 = "0.5"
+h2 = "0.4"
+http = "1"
+bytes = "1"
 
 # HTTP-клиент для DoH/GitHub без TLS-дублирования: используем reqwest на rustls
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }

@@ -55,6 +55,8 @@ impl Default for Cfproxy429State {
 
 // Cloudflare proxy config
 pub static CFPROXY_ENABLED: AtomicBool = AtomicBool::new(true);
+// HTTP/2 мультиплексирование медиа через CF (tg-ws-proxy 1.11, --no-h2)
+pub static H2_ENABLED: AtomicBool = AtomicBool::new(true);
 
 pub struct CfproxyConfig {
     pub user_domain: String,
@@ -148,6 +150,7 @@ pub struct Stats {
     pub connections_ws: AtomicI64,
     pub connections_tcp_fallback: AtomicI64,
     pub connections_cfproxy: AtomicI64,
+    pub connections_h2: AtomicI64,
     pub connections_http_reject: AtomicI64,
     pub connections_passthrough: AtomicI64,
     pub connections_bad: AtomicI64,
@@ -165,12 +168,13 @@ impl Stats {
         let ph = self.pool_hits.load(Ordering::Relaxed);
         let pm = self.pool_misses.load(Ordering::Relaxed);
         format!(
-            "total={} active={} ws={} tcp_fb={} cf={} bad={} err={} pool={}/{} up={} down={}",
+            "total={} active={} ws={} tcp_fb={} cf={} h2={} bad={} err={} pool={}/{} up={} down={}",
             self.connections_total.load(Ordering::Relaxed),
             self.connections_active.load(Ordering::Relaxed),
             self.connections_ws.load(Ordering::Relaxed),
             self.connections_tcp_fallback.load(Ordering::Relaxed),
             self.connections_cfproxy.load(Ordering::Relaxed),
+            self.connections_h2.load(Ordering::Relaxed),
             self.connections_bad.load(Ordering::Relaxed),
             self.ws_errors.load(Ordering::Relaxed),
             ph,
@@ -189,6 +193,10 @@ impl Stats {
         let cf = self.connections_cfproxy.load(Ordering::Relaxed);
         if cf > 0 {
             parts.push(format!("cf:{}", cf));
+        }
+        let h2 = self.connections_h2.load(Ordering::Relaxed);
+        if h2 > 0 {
+            parts.push(format!("h2:{}", h2));
         }
         let tcp = self.connections_tcp_fallback.load(Ordering::Relaxed);
         if tcp > 0 {
@@ -212,6 +220,7 @@ impl Stats {
         self.connections_ws.store(0, Ordering::Relaxed);
         self.connections_tcp_fallback.store(0, Ordering::Relaxed);
         self.connections_cfproxy.store(0, Ordering::Relaxed);
+        self.connections_h2.store(0, Ordering::Relaxed);
         self.connections_http_reject.store(0, Ordering::Relaxed);
         self.connections_passthrough.store(0, Ordering::Relaxed);
         self.connections_bad.store(0, Ordering::Relaxed);

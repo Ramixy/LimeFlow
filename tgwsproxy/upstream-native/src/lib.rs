@@ -1,3 +1,4 @@
+pub mod cfh2;
 pub mod cfproxy;
 pub mod config;
 pub mod crypto;
@@ -171,6 +172,8 @@ pub extern "C" fn StopProxy() -> c_int {
     WS_BLACKLIST.write().clear();
     DC_FAIL_UNTIL.write().clear();
     cfproxy::clear_cfproxy_429_cooldowns();
+    cfh2::reset();
+    proxy::reset_tcp_backoff();
 
     linfo!("StopProxy: exit");
     0
@@ -178,14 +181,14 @@ pub extern "C" fn StopProxy() -> c_int {
 
 #[no_mangle]
 pub extern "C" fn SetPoolSize(size: c_int) {
-    let mut n = size;
-    if n < 2 {
-        n = 2;
-    }
-    if n > 16 {
-        n = 16;
-    }
-    POOL_SIZE.store(n, Ordering::Relaxed);
+    // 0 выключает прямой WS (DC->IP теперь работает только через пул).
+    POOL_SIZE.store(size.clamp(0, 16), Ordering::Relaxed);
+}
+
+/// HTTP/2 мультиплексирование медиа через CF (по умолчанию включено).
+#[no_mangle]
+pub extern "C" fn SetH2Enabled(enabled: c_int) {
+    H2_ENABLED.store(enabled != 0, Ordering::Relaxed);
 }
 
 /// # Safety
