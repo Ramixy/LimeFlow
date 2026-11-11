@@ -249,6 +249,29 @@ class FlowsealProfilesTest {
         assertTrue(args.contains("-nwww.google.com"))
     }
 
+    /*
+     * -l only sets the fake payload; desync.c sends a TCP fake solely for a -f part.
+     * The ZF profiles used to carry a full ClientHello with no -f, so the fake was
+     * never sent and the profile degraded to a plain split.
+     */
+    @Test
+    fun tcpGroupsWithAFakePayloadActuallySendTheFake() {
+        FlowsealProfiles.all.forEach { profile ->
+            val groups = mutableListOf(mutableListOf<String>())
+            shellSplit(profile.arguments).forEach { token ->
+                if (token.startsWith("-A")) groups.add(mutableListOf()) else groups.last().add(token)
+            }
+            groups.filter { group -> group.none { it.startsWith("-Ku") } }.forEach { group ->
+                if (group.any { it.startsWith("-l:\\x16") }) {
+                    assertTrue(
+                        "${profile.name} sets a TLS fake payload but has no -f part: $group".take(200),
+                        group.any { it.startsWith("-f") },
+                    )
+                }
+            }
+        }
+    }
+
     @Test
     fun profilesSetATimeoutSoTimeoutTriggersCanFire() {
         FlowsealProfiles.all.forEach { profile ->

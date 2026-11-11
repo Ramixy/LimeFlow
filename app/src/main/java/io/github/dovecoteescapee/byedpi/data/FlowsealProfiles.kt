@@ -458,9 +458,9 @@ object FlowsealProfiles {
             "google CH fake 681b",
             "Полный Chrome-ClientHello из zapret на TCP, настоящий QUIC Initial на 443 и Discord-fake на голосе",
             profileArgs(
-                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1+s -d3+s -r1+s",
-                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
-                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1+s -d3+s",
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-204 -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-1 -t5 -s1+s -d3+s",
                 retry = retryDeep,
                 quicFakes = 10,
                 voiceFakes = 8,
@@ -477,9 +477,9 @@ object FlowsealProfiles {
             "max.ru CH fake 664b",
             "ClientHello с SNI max.ru из zapret на TCP, QUIC Initial на 443, Discord-fake на голосе",
             profileArgs(
-                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -t5 -s1+s -d3+s -r1+s",
-                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
-                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -t5 -s1+s -d3+s",
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -f-204 -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_MAXRU}' -f-1 -t5 -s1+s -d3+s",
                 retry = retryDeep,
                 quicFakes = 10,
                 voiceFakes = 8,
@@ -490,15 +490,57 @@ object FlowsealProfiles {
             kind = ProfileKind.UNIVERSAL,
             badge = "MFake",
         ),
+        /*
+         * zapret-discord-youtube 1.10.4 заменил стандартный TLS-fake max.ru на
+         * www.sferum.ru во всех ALT/EXP/FAKE TLS AUTO/SIMPLE FAKE стратегиях.
+         */
+        FlowsealProfile(
+            "limeflow_zf_sferum",
+            "ZAPRET SFAKE 1.10.4",
+            "sferum.ru CH fake 661b",
+            "Стандартный fake zapret 1.10.4: ClientHello с SNI www.sferum.ru на TCP, QUIC Initial на 443, Discord-fake на голосе",
+            profileArgs(
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_SFERUM}' -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_SFERUM}' -f-204 -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_SFERUM}' -f-1 -t5 -s1+s -d3+s",
+                retry = retryDeep,
+                quicFakes = 10,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "SFake",
+        ),
+        FlowsealProfile(
+            "limeflow_zf_sferum_autottl",
+            "ZAPRET SFAKE AUTOTTL",
+            "sferum.ru fake + auto TTL",
+            "Fake sferum.ru из zapret 1.10.4 с авто-TTL: для мобильных сетей, где фиксированный TTL 5 не доходит до ТСПУ или ломает соединение",
+            profileArgs(
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_SFERUM}' -f-1 -z1:4:64 -t8 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_SFERUM}' -f-204 -z1:4:64 -t8 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_SFERUM}' -f-1 -z1:4:64 -t8 -s1+s -d3+s",
+                retry = "-o1 -d1 -s3+sm -r1+s -Qr -f-1 -z1:4:64 -t6",
+                quicFakes = 10,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "SFake TTL",
+        ),
         FlowsealProfile(
             "limeflow_zf_4pda",
             "ZAPRET 4PFAKE",
             "4pda CH fake 284b",
             "Компактный ClientHello (284 байта) из zapret — быстрый fake для слабых сетей и устройств",
             profileArgs(
-                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -t5 -s1+s -d3+s -r1+s",
-                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
-                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -t5 -s1+s -d3+s",
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -f-1 -t5 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -f-204 -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_4PDA}' -f-1 -t5 -s1+s -d3+s",
                 retry = retryDeep,
                 quicFakes = 8,
                 voiceFakes = 6,
@@ -516,7 +558,7 @@ object FlowsealProfiles {
             "Голос Discord в приоритете: 12 fake с Discord-подменой на голосовых портах, google-fake на gateway",
             profileArgs(
                 youtube = ytWifi,
-                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-204 -t5 -s1:5+sm -o2 -d1 -Mh,d",
                 generic = genericOob,
                 retry = retryDeep,
                 quicFakes = 8,
@@ -533,9 +575,9 @@ object FlowsealProfiles {
             "google fake + auto TTL",
             "Google-fake с авто-TTL: движок сам замеряет дистанцию до сервера UDP-пробой, -t8 только как запасной",
             profileArgs(
-                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -z1:4:64 -t8 -s1+s -d3+s -r1+s",
-                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -z1:4:64 -t8 -s1:5+sm -o2 -d1 -Mh,d",
-                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -z1:4:64 -t8 -s1+s -d3+s",
+                youtube = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-1 -z1:4:64 -t8 -s1+s -d3+s -r1+s",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-204 -z1:4:64 -t8 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-1 -z1:4:64 -t8 -s1+s -d3+s",
                 retry = "-o1 -d1 -s3+sm -r1+s -Qr -f-1 -z1:4:64 -t6",
                 quicFakes = 10,
                 voiceFakes = 8,
@@ -671,7 +713,7 @@ object FlowsealProfiles {
             "Максимальная защита голосовых каналов Discord от потерь UDP-пакетов на мобильных операторах",
             profileArgs(
                 youtube = ytWifi,
-                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                discord = "-Qr,d -l':${FakePayloads.FAKE_TLS_GOOGLE}' -f-204 -t5 -s1:5+sm -o2 -d1 -Mh,d",
                 generic = genericOob,
                 retry = retryDeep,
                 quicFakes = 8,
@@ -720,7 +762,18 @@ object FlowsealProfiles {
         FlowsealProfile("simple_fake", "SIMPLE FAKE", "compact fake", "Компактный fake-профиль", flat(18, hosts = hosts)),
         FlowsealProfile("simple_fake_alt", "SIMPLE FAKE ALT", "compact mixed", "Fake, OOB и TLS-record", flat(19, hosts = hosts)),
         FlowsealProfile("simple_fake_alt2", "SIMPLE FAKE ALT2", "protocol groups", "Раздельная обработка протоколов", flat(20, hosts = hosts)),
-    )
+    ).sortedBy(::catalogRank)
+
+    /*
+     * Порядок в списке: сначала альты zapret (ZAPRET ALT…), затем остальные
+     * порты zapret, затем собственные цепочки LimeFlow. sortedBy устойчив,
+     * поэтому внутри групп сохраняется порядок объявления.
+     */
+    private fun catalogRank(profile: FlowsealProfile): Int = when {
+        profile.name.startsWith("ZAPRET ALT") -> 0
+        profile.name.startsWith("ZAPRET") -> 1
+        else -> 2
+    }
 
     private const val DEFAULT_ID = "limeflow_universal"
 

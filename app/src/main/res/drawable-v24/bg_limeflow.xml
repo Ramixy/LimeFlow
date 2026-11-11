@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Calm background: two soft radial glows of the palette colors instead of the
+     old angular shards. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="360dp"
+    android:height="800dp"
+    android:viewportWidth="360"
+    android:viewportHeight="800">
+    <path android:fillColor="?android:attr/colorBackground" android:pathData="M0,0h360v800H0z" />
+    <path android:fillAlpha="0.22" android:pathData="M0,0h360v800H0z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="320"
+                android:centerY="-40"
+                android:gradientRadius="340"
+                android:type="radial">
+                <item android:color="?attr/colorPrimary" android:offset="0" />
+                <item android:color="#00000000" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillAlpha="0.14" android:pathData="M0,0h360v800H0z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="0"
+                android:centerY="820"
+                android:gradientRadius="320"
+                android:type="radial">
+                <item android:color="?attr/colorSecondary" android:offset="0" />
+                <item android:color="#00000000" android:offset="1" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

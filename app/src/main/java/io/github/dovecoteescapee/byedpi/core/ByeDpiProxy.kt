@@ -19,13 +19,16 @@ class ByeDpiProxy {
     private fun prepareArgs(preferences: ByeDpiProxyPreferences): Array<String> =
         when (preferences) {
             is ByeDpiProxyCmdPreferences -> preferences.args
-            is ByeDpiProxyUIPreferences -> arrayOf(
-                "ciadpi",
-                "--ip", preferences.ip,
-                "--port", preferences.port.toString(),
-                "--split", "1+s",
-                "--disorder", "3+s",
-                "--udp-fake", "1",
+            is ByeDpiProxyUIPreferences -> ByeDpiProxyPreferences.withBlockQuic(
+                arrayOf(
+                    "ciadpi",
+                    "--ip", preferences.ip,
+                    "--port", preferences.port.toString(),
+                    "--split", "1+s",
+                    "--disorder", "3+s",
+                    "--udp-fake", "1",
+                ),
+                preferences.blockQuic,
             )
         }
 

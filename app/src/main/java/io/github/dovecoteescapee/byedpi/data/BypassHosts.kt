@@ -53,6 +53,9 @@ object BypassHosts {
         "youtube-ui.l.google.com", "yt-video-upload.l.google.com", "ytimg.l.google.com",
         "video.google.com", "gvt1.com", "yt3.ggpht.com", "yt4.ggpht.com",
         "yt3.googleusercontent.com", "play.google.com",
+        // zapret 1.10.4 list-google: player scripts and fonts YouTube loads
+        // before the first frame; without them the page stalls on a spinner.
+        "gstatic.com", "fonts.googleapis.com",
     )
 
     /*

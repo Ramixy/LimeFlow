@@ -63,4 +63,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // SSH для установки собственного сервера из приложения («Свой сервер»)
+    implementation("com.github.mwiede:jsch:0.2.20")
 }

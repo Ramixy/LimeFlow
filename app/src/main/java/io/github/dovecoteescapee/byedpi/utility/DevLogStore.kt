@@ -22,12 +22,12 @@ object DevLogStore {
     // Tags of everything this app logs (Kotlin classes + the native engines).
     private val APP_TAGS = setOf(
         "byedpivpnservice", "byedpiproxyservice", "servicemanager", "quicktileservice",
-        "zapretengineservice", "zapretstrategies", "vpnwidgets", "controlreceiver",
+        "vpnwidgets", "controlreceiver",
         "bootreceiver", "screeneventscontroller", "devlogstore", "mainactivity",
         "settingsactivity", "strategytestrunner", "trafficstatsstore", "connectiontester",
         "appupdatechecker", "appfilteractivity", "hostlistactivity", "profilepickeractivity",
         "shortcutactivity", "strategyshareactivity", "trafficstatsactivity",
-        "urlschemesactivity", "devlogsactivity", "onboardingactivity", "proxy", "nfqws",
+        "urlschemesactivity", "devlogsactivity", "onboardingactivity", "proxy",
     )
 
     private val lines = ArrayDeque<String>(MAX_LINES)

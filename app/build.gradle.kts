@@ -1,9 +1,27 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+// Release signing comes from keystore.properties in the project root (not in git).
+// Without it the release build is left unsigned and CI keeps building debug APKs.
+val releaseSigning = Properties()
+rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { releaseSigning.load(it) }
+
 android {
+    signingConfigs {
+        if (releaseSigning.containsKey("storeFile")) {
+            create("release") {
+                storeFile = file(releaseSigning.getProperty("storeFile"))
+                storePassword = releaseSigning.getProperty("storePassword")
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = releaseSigning.getProperty("keyPassword")
+            }
+        }
+    }
+
     namespace = "io.github.dovecoteescapee.byedpi"
     compileSdk = 34
     ndkVersion = "25.1.8937393"
@@ -12,8 +30,8 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 35
-        versionName = "1.5.5"
+        versionCode = 37
+        versionName = "1.6.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -43,6 +61,7 @@ android {
         release {
             buildConfigField("String", "VERSION_NAME",  "\"${defaultConfig.versionName}\"")
 
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
@@ -107,8 +126,7 @@ tasks.register<Exec>("runNdkBuild") {
     }
     setArgs(listOf(
         "NDK_PROJECT_PATH=build/intermediates/ndkBuild",
-        // Выводим в build/, а не в src/main/jniLibs: ndk-build чистит каталог
-        // вывода и удалял бы вшитый там libnfqws.so.
+        // Выводим в build/, а не в src/main/jniLibs: ndk-build чистит каталог вывода.
         "NDK_LIBS_OUT=build/intermediates/ndkBuild/hev-libs",
         "APP_BUILD_SCRIPT=src/main/jni/Android.mk",
         "NDK_APPLICATION_MK=src/main/jni/Application.mk"
@@ -120,10 +138,8 @@ tasks.register<Exec>("runNdkBuild") {
 android {
     sourceSets {
         getByName("main") {
-            // libhev-socks5-tunnel.so собирается в build/, libnfqws.so лежит в
-            // отдельном каталоге, который ndk-build не трогает.
+            // libhev-socks5-tunnel.so собирается ndk-build в build/.
             jniLibs.srcDir("build/intermediates/ndkBuild/hev-libs")
-            jniLibs.srcDir("src/main/jniRootLibs")
         }
     }
 }

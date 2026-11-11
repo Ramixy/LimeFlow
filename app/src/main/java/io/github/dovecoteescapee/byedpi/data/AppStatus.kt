@@ -7,20 +7,18 @@ enum class AppStatus {
 
 enum class Mode {
     Proxy,
-    VPN,
-    Zapret;
+    VPN;
 
     companion object {
         fun fromSender(sender: Sender): Mode = when (sender) {
             Sender.Proxy -> Proxy
             Sender.VPN -> VPN
-            Sender.Zapret -> Zapret
         }
 
         fun fromString(name: String): Mode = when (name) {
             "proxy" -> Proxy
-            "zapret" -> Zapret
-            // A corrupted/imported preference must not crash the app at startup.
+            // A corrupted/imported preference (or the removed root "zapret"
+            // engine) must not crash the app at startup.
             else -> VPN
         }
     }

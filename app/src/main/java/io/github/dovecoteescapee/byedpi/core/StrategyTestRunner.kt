@@ -101,11 +101,19 @@ object StrategyTestRunner {
     private const val TAG = "StrategyTestRunner"
 
     private const val PROXY_HOST = "127.0.0.1"
+    /*
+     * Timings and parallelism follow zapret-discord-youtube 1.10.4 "test zapret.ps1":
+     * 4 s per request with a 3 s connect limit, min(16, max(8, cores * 2)) requests
+     * at once. The engine start is polled instead of a fixed 500 ms sleep.
+     */
     private const val REQUEST_TIMEOUT_MS = 4_000
-    private const val PROXY_START_DELAY_MS = 500L
+    private const val CONNECT_TIMEOUT_MS = 3_000
+    private const val PROXY_START_MAX_WAIT_MS = 800L
+    private const val PROXY_START_POLL_MS = 15L
     private const val PROXY_STOP_TIMEOUT_MS = 2_000L
-    private const val BETWEEN_STRATEGIES_DELAY_MS = 150L
-    private const val MAX_PARALLEL_REQUESTS = 8
+    private const val BETWEEN_STRATEGIES_DELAY_MS = 30L
+    private val MAX_PARALLEL_REQUESTS =
+        minOf(16, maxOf(8, Runtime.getRuntime().availableProcessors() * 2))
     private const val RESULT_FORMAT_VERSION = 3
     private val PING_TIME = Regex("""time[=<]([\d.]+)\s*ms""")
 
@@ -149,6 +157,9 @@ object StrategyTestRunner {
             val savedByProfile = loadSavedResults(appContext)
                 .associateByTo(mutableMapOf()) { it.profile.id }
             try {
+                // Ping goes around the proxy and does not depend on the strategy:
+                // measure it once per run instead of once per strategy.
+                val pings = measurePings()
                 profiles.forEachIndexed { index, profile ->
                     console.clear()
                     console.append('[').append(index + 1).append('/').append(profiles.size)
@@ -162,7 +173,7 @@ object StrategyTestRunner {
                         console = console.toString(),
                         lastResult = null,
                     )
-                    val result = testProfile(appContext, profile) { targetResult ->
+                    val result = testProfile(appContext, profile, pings) { targetResult ->
                         console.append(consoleLine(targetResult)).append('\n')
                         _state.value = State.Testing(
                             total = profiles.size,
@@ -215,6 +226,7 @@ object StrategyTestRunner {
     private suspend fun testProfile(
         context: Context,
         profile: FlowsealProfile,
+        pings: Map<String, Double?>,
         onTargetComplete: (TargetResult) -> Unit,
     ): ProfileTestResult = supervisorScope {
         // A per-run free port keeps the check away from the app's own SOCKS service
@@ -238,7 +250,7 @@ object StrategyTestRunner {
         }
 
         try {
-            delay(PROXY_START_DELAY_MS)
+            awaitEngine(port, engineExited)
             if (engineExited.get()) {
                 return@supervisorScope ProfileTestResult(profile, 0, 0, null, emptyList())
             }
@@ -246,7 +258,7 @@ object StrategyTestRunner {
             val requestSlots = Semaphore(MAX_PARALLEL_REQUESTS)
             val checks = TARGETS.map { target ->
                 async(Dispatchers.IO) {
-                    checkTarget(target, port, requestSlots)
+                    checkTarget(target, port, requestSlots, pings[target.host])
                 }
             }
 
@@ -292,12 +304,10 @@ object StrategyTestRunner {
         target: TestTarget,
         proxyPort: Int,
         requestSlots: Semaphore,
+        pingMs: Double?,
     ): TargetResult = supervisorScope {
-        val ping = async(Dispatchers.IO) {
-            requestSlots.withPermit { ping(target.host) }
-        }
         if (target.pingOnly) {
-            return@supervisorScope TargetResult(target, pingMs = ping.await())
+            return@supervisorScope TargetResult(target, pingMs = pingMs)
         }
 
         val http = async(Dispatchers.IO) {
@@ -314,8 +324,28 @@ object StrategyTestRunner {
             httpOk = http.await(),
             tls12Ok = tls12.await(),
             tls13Ok = tls13.await(),
-            pingMs = ping.await(),
+            pingMs = pingMs,
         )
+    }
+
+    private suspend fun measurePings(): Map<String, Double?> = supervisorScope {
+        TARGETS.map { it.host }.distinct()
+            .map { host -> host to async(Dispatchers.IO) { ping(host) } }
+            .associate { (host, job) -> host to job.await() }
+    }
+
+    /** Waits until the engine accepts connections (or exits), at most PROXY_START_MAX_WAIT_MS. */
+    private suspend fun awaitEngine(port: Int, engineExited: AtomicBoolean) {
+        val deadline = System.currentTimeMillis() + PROXY_START_MAX_WAIT_MS
+        while (!engineExited.get() && System.currentTimeMillis() < deadline) {
+            val up = withContext(Dispatchers.IO) {
+                runCatching {
+                    Socket().use { it.connect(InetSocketAddress(PROXY_HOST, port), 100) }
+                }.isSuccess
+            }
+            if (up) return
+            delay(PROXY_START_POLL_MS)
+        }
     }
 
     private fun probeHttps(target: TestTarget, proxyPort: Int, tlsVersion: String?): Boolean =
@@ -324,7 +354,7 @@ object StrategyTestRunner {
             val proxy = Proxy(Proxy.Type.SOCKS, InetSocketAddress(PROXY_HOST, proxyPort))
             Socket(proxy).use { rawSocket ->
                 rawSocket.soTimeout = REQUEST_TIMEOUT_MS
-                rawSocket.connect(InetSocketAddress.createUnresolved(host, 443), REQUEST_TIMEOUT_MS)
+                rawSocket.connect(InetSocketAddress.createUnresolved(host, 443), CONNECT_TIMEOUT_MS)
                 val sslContext = SSLContext.getInstance("TLS").apply { init(null, null, null) }
                 val sslSocket = sslContext.socketFactory
                     .createSocket(rawSocket, host, 443, true) as SSLSocket

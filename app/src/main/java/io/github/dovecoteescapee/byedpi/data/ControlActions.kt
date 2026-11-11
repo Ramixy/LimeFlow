@@ -26,6 +26,5 @@ const val STATUS_VALUE_DISCONNECTED = "disconnected"
 
 const val MODE_VALUE_VPN = "vpn"
 const val MODE_VALUE_PROXY = "proxy"
-const val MODE_VALUE_ZAPRET = "zapret"
 
 const val DEEPLINK_SCHEME = "limeflow"

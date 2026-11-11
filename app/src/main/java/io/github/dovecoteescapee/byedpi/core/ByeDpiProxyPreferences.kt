@@ -7,19 +7,34 @@ import io.github.dovecoteescapee.byedpi.utility.shellSplit
 
 sealed interface ByeDpiProxyPreferences {
     companion object {
-        fun fromSharedPreferences(preferences: SharedPreferences): ByeDpiProxyPreferences =
-            when (preferences.getBoolean("byedpi_enable_cmd_settings", false)) {
+        /*
+         * QUIC (UDP/443) blocking, on by default. Current TSPU builds throttle
+         * QUIC to YouTube/Google after the handshake, so the client keeps a
+         * half-dead QUIC session and never falls back to TCP, where the desync
+         * groups actually work. Dropping UDP/443 forces that fallback.
+         */
+        const val BLOCK_QUIC_KEY = "block_quic"
+        const val BLOCK_QUIC_ARG = "--block-quic"
+
+        fun fromSharedPreferences(preferences: SharedPreferences): ByeDpiProxyPreferences {
+            val blockQuic = preferences.getBoolean(BLOCK_QUIC_KEY, true)
+            return when (preferences.getBoolean("byedpi_enable_cmd_settings", false)) {
                 true -> {
                     val cmd = ByeDpiProxyCmdPreferences(preferences)
-                    if (ClassicEngine.isEnabled(preferences)) {
-                        ByeDpiProxyCmdPreferences(ClassicEngine.applyToArgs(cmd.args))
+                    val args = if (ClassicEngine.isEnabled(preferences)) {
+                        ClassicEngine.applyToArgs(cmd.args)
                     } else {
-                        cmd
+                        cmd.args
                     }
+                    ByeDpiProxyCmdPreferences(withBlockQuic(args, blockQuic))
                 }
 
-                false -> ByeDpiProxyUIPreferences(preferences)
+                false -> ByeDpiProxyUIPreferences(preferences).also { it.blockQuic = blockQuic }
             }
+        }
+
+        fun withBlockQuic(args: Array<String>, enabled: Boolean): Array<String> =
+            if (enabled && BLOCK_QUIC_ARG !in args && "-k" !in args) args + BLOCK_QUIC_ARG else args
     }
 }
 
@@ -103,6 +118,7 @@ class ByeDpiProxyUIPreferences(
     val udpFakeCount: Int = udpFakeCount ?: 0
     val dropSack: Boolean = dropSack ?: false
     val fakeOffset: Int = byedpiFakeOffset ?: 0
+    var blockQuic: Boolean = false
 
     constructor(preferences: SharedPreferences) : this(
         ip = preferences.getString("byedpi_proxy_ip", null),

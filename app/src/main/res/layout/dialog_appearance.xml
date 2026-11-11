@@ -111,7 +111,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="#1769E0"
-                app:cardCornerRadius="24dp"
+                app:cardCornerRadius="28dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/white" />
 
@@ -123,7 +123,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="#65558F"
-                app:cardCornerRadius="24dp"
+                app:cardCornerRadius="28dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/white" />
 
@@ -135,7 +135,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="#5F5D68"
-                app:cardCornerRadius="24dp"
+                app:cardCornerRadius="28dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/white" />
 
@@ -147,7 +147,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="#8B5747"
-                app:cardCornerRadius="24dp"
+                app:cardCornerRadius="28dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/white" />
 
@@ -159,7 +159,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 app:cardBackgroundColor="#000000"
-                app:cardCornerRadius="24dp"
+                app:cardCornerRadius="28dp"
                 app:cardElevation="0dp"
                 app:strokeColor="@color/white" />
         </LinearLayout>

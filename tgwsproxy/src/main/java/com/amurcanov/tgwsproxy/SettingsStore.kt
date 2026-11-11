@@ -25,6 +25,7 @@ class SettingsStore(private val context: Context) {
 
     companion object {
         const val DEFAULT_DIRECT_DC2_IP = "149.154.167.220"
+        const val DEFAULT_COVER_SNI = "vk.com"
         const val DEFAULT_DIRECT_DC4_IP = "149.154.167.220"
         private const val LEGACY_DIRECT_DC_IP = "149.154.167.220"
         const val DEFAULT_LOG_SHOW_INFO = true
@@ -48,6 +49,10 @@ class SettingsStore(private val context: Context) {
         val CUSTOM_CF_DOMAIN = stringPreferencesKey("custom_cf_domain")
         val AUTO_START_ON_BOOT = booleanPreferencesKey("auto_start_on_boot")
         val CF_H2_ENABLED = booleanPreferencesKey("cf_h2_enabled")
+        val COVER_SNI = stringPreferencesKey("cover_sni")
+        val OWN_SERVER_PLAIN = booleanPreferencesKey("own_server_plain")
+        val VPS_HOST = stringPreferencesKey("vps_host")
+        val VPS_USER = stringPreferencesKey("vps_user")
         val SECRET_KEY = stringPreferencesKey("secret_key")
         val LOG_SHOW_DEBUG = booleanPreferencesKey("log_show_debug")
         val LOG_SHOW_INFO = booleanPreferencesKey("log_show_info")
@@ -97,6 +102,30 @@ class SettingsStore(private val context: Context) {
     val autoStartOnBoot: Flow<Boolean> = context.dataStore.data.map { it[Keys.AUTO_START_ON_BOOT] ?: false }
     val cfH2Enabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.CF_H2_ENABLED] ?: true }
     val secretKey: Flow<String> = context.dataStore.data.map { it[Keys.SECRET_KEY] ?: "" }
+    // SNI disguise for the own server: the provider blocks sslip.io by SNI.
+    val coverSni: Flow<String> = context.dataStore.data.map { it[Keys.COVER_SNI] ?: DEFAULT_COVER_SNI }
+
+    // Own server over plain HTTP (port 80) when TLS to the VPS is cut by TSPU.
+    val ownServerPlain: Flow<Boolean> = context.dataStore.data.map { it[Keys.OWN_SERVER_PLAIN] ?: false }
+
+    // Last VPS used by the installer; the password is never stored.
+    val vpsHost: Flow<String> = context.dataStore.data.map { it[Keys.VPS_HOST] ?: "" }
+    val vpsUser: Flow<String> = context.dataStore.data.map { it[Keys.VPS_USER] ?: "root" }
+
+    suspend fun saveVps(host: String, user: String) {
+        context.dataStore.edit {
+            it[Keys.VPS_HOST] = host
+            it[Keys.VPS_USER] = user
+        }
+    }
+
+    suspend fun saveOwnServerPlain(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.OWN_SERVER_PLAIN] = enabled }
+    }
+
+    suspend fun saveCoverSni(value: String) {
+        context.dataStore.edit { it[Keys.COVER_SNI] = value.trim().lowercase() }
+    }
 
     val logShowDebug: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_DEBUG] ?: false }
     val logShowInfo: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_INFO] ?: DEFAULT_LOG_SHOW_INFO }

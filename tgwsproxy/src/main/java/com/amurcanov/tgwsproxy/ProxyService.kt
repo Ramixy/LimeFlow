@@ -41,6 +41,8 @@ class ProxyService : Service() {
     private var lastCfPriority: Boolean = true
     private var lastCfDomain: String = ""
     private var lastH2Enabled: Boolean = true
+    private var lastCoverSni: String = SettingsStore.DEFAULT_COVER_SNI
+    private var lastOwnServerPlain: Boolean = false
     private var lastSecretKey: String = ""
 
     companion object {
@@ -55,6 +57,8 @@ class ProxyService : Service() {
         const val EXTRA_CFPROXY_PRIORITY = "EXTRA_CFPROXY_PRIORITY"
         const val EXTRA_CFPROXY_DOMAIN = "EXTRA_CFPROXY_DOMAIN"
         const val EXTRA_CF_H2_ENABLED = "EXTRA_CF_H2_ENABLED"
+        const val EXTRA_COVER_SNI = "EXTRA_COVER_SNI"
+        const val EXTRA_OWN_SERVER_PLAIN = "EXTRA_OWN_SERVER_PLAIN"
         const val EXTRA_SECRET_KEY = "EXTRA_SECRET_KEY"
         
         private const val NOTIFICATION_ID = 101
@@ -95,6 +99,8 @@ class ProxyService : Service() {
                 val cfDomain = intent.getStringExtra(EXTRA_CFPROXY_DOMAIN) ?: ""
                 val secretKey = intent.getStringExtra(EXTRA_SECRET_KEY) ?: ""
                 lastH2Enabled = intent.getBooleanExtra(EXTRA_CF_H2_ENABLED, true)
+                lastCoverSni = intent.getStringExtra(EXTRA_COVER_SNI) ?: SettingsStore.DEFAULT_COVER_SNI
+                lastOwnServerPlain = intent.getBooleanExtra(EXTRA_OWN_SERVER_PLAIN, false)
                 startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
             }
             ACTION_STOP -> {
@@ -122,7 +128,17 @@ class ProxyService : Service() {
     private fun startProxy(bindIp: String, port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "") {
-        if (_isRunning.value || stopInProgress) return
+        if (_isRunning.value || stopInProgress) {
+            // Started through startForegroundService(): Android kills the app
+            // unless startForeground() follows, even when the start is ignored.
+            val notification = createNotification(lastNotificationContent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            return
+        }
 
         // Save params for restart
         lastBindIp = bindIp
@@ -159,6 +175,8 @@ class ProxyService : Service() {
                 CfDomainCache.ensureFresh(cacheDir)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
                 NativeProxy.setH2Enabled(lastH2Enabled)
+                NativeProxy.setCoverSni(lastCoverSni)
+                NativeProxy.setOwnServerPlain(lastOwnServerPlain)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result != 0) {
                     Log.e(TAG, "StartProxy returned error code: $result")

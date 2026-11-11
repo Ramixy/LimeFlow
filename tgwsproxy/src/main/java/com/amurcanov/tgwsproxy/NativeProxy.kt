@@ -15,6 +15,8 @@ interface ProxyLibrary : Library {
     fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
     fun SetH2Enabled(enabled: Int)
+    fun SetCoverSni(sni: String)
+    fun SetOwnServerPlain(enabled: Int)
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
     fun FreeString(p: Pointer)
@@ -47,6 +49,14 @@ object NativeProxy {
 
     fun setH2Enabled(enabled: Boolean) {
         ProxyLibrary.INSTANCE.SetH2Enabled(if (enabled) 1 else 0)
+    }
+
+    fun setCoverSni(sni: String) {
+        ProxyLibrary.INSTANCE.SetCoverSni(sni)
+    }
+
+    fun setOwnServerPlain(enabled: Boolean) {
+        ProxyLibrary.INSTANCE.SetOwnServerPlain(if (enabled) 1 else 0)
     }
 
     /** Returns the full secret with correct prefix (dd or ee+domain_hex) */

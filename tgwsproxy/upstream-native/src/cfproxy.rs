@@ -53,6 +53,57 @@ pub fn normalize_cf_domain(s: &str) -> String {
     decoded
 }
 
+// Свой домен пользователя (CF или собственный VPS с nginx) хранится открытым
+// текстом в любой зоне. normalize_cf_domain для него не годится: она пропускает
+// только .co.uk, а .com «расшифровывает» сдвигом Цезаря в мусор.
+pub fn clean_user_domain(s: &str) -> String {
+    let mut d = s.trim().to_lowercase();
+    for prefix in ["https://", "http://", "wss://", "ws://"] {
+        if let Some(rest) = d.strip_prefix(prefix) {
+            d = rest.to_string();
+        }
+    }
+    if let Some(i) = d.find('/') {
+        d.truncate(i);
+    }
+    while d.ends_with('.') {
+        d.pop();
+    }
+    d
+}
+
+// Подключение к своему серверу: (IP для прямого дозвона, SNI для ClientHello).
+// Для <a-b-c-d>.sslip.io / nip.io IP берётся из самого имени, без DNS, который
+// у провайдера может быть отравлен. SNI подменяется на COVER_SNI: провайдер
+// режет sslip.io по SNI, а настоящее имя видно только внутри TLS (Host).
+pub fn user_endpoint(domain: &str) -> Option<(Option<String>, String)> {
+    let user = CFPROXY.read().user_domain.clone();
+    if user.is_empty() {
+        return None;
+    }
+    let host = domain.trim().to_lowercase();
+    if host != user && !host.ends_with(&format!(".{}", user)) {
+        return None;
+    }
+    let ip = ["sslip.io", "nip.io"].iter().find_map(|zone| {
+        let label = user.strip_suffix(&format!(".{}", zone))?;
+        let label = label.rsplit('.').next()?;
+        label.replace('-', ".").parse::<std::net::Ipv4Addr>().ok().map(|a| a.to_string())
+    });
+    let cover = crate::config::COVER_SNI.read().trim().to_string();
+    let sni = if cover.is_empty() { host } else { cover };
+    Some((ip, sni))
+}
+
+// База домена для подключения: свой домен как есть, встроенные — через decode.
+pub fn cf_base_domain(s: &str) -> String {
+    let user = CFPROXY.read().user_domain.clone();
+    if !user.is_empty() && clean_user_domain(s) == user {
+        return user;
+    }
+    normalize_cf_domain(s)
+}
+
 pub fn default_cfproxy_domains() -> Vec<String> {
     let mut domains = Vec::with_capacity(CFPROXY_ENC.len());
     for enc in CFPROXY_ENC {
@@ -89,7 +140,7 @@ pub fn clear_cfproxy_429_cooldowns() {
 }
 
 pub fn clear_cfproxy_429_cooldown(domain: &str) {
-    let d = normalize_cf_domain(domain);
+    let d = cf_base_domain(domain);
     if d.is_empty() {
         return;
     }
@@ -143,7 +194,7 @@ pub fn next_cfproxy_429_cooldown_delay(prev: &Cfproxy429State, retry_after: Dura
 }
 
 pub fn mark_cfproxy_429_cooldown(domain: &str, err: &WsError) {
-    let d = normalize_cf_domain(domain);
+    let d = cf_base_domain(domain);
     if d.is_empty() {
         return;
     }
@@ -171,7 +222,7 @@ pub fn mark_cfproxy_429_cooldown(domain: &str, err: &WsError) {
 }
 
 pub fn cfproxy_429_cooldown_remaining(domain: &str) -> Duration {
-    let d = normalize_cf_domain(domain);
+    let d = cf_base_domain(domain);
     if d.is_empty() {
         return Duration::ZERO;
     }
@@ -604,6 +655,13 @@ pub async fn cf_connect_domain(
     }
 
     let host_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
+    // Свой сервер с IP в имени: сразу по IP, мимо DNS провайдера.
+    if let Some((Some(ip), _)) = user_endpoint(domain) {
+        return match ws_connect_once(&ip, domain, path, host_timeout).await {
+            Ok(ws) => (Some(ws), ip, None),
+            Err(e) => (None, ip, Some(e)),
+        };
+    }
     match ws_connect_once(domain, domain, path, host_timeout).await {
         Ok(ws) => return (Some(ws), String::new(), None),
         Err(host_err) => {

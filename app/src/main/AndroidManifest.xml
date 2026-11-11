@@ -152,10 +152,6 @@
             android:exported="false" />
 
         <activity
-            android:name=".activities.ZapretEngineActivity"
-            android:exported="false" />
-
-        <activity
             android:name=".activities.ShortcutActivity"
             android:excludeFromRecents="true"
             android:exported="false"
@@ -230,15 +226,6 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_vpn_2x2_info" />
         </receiver>
-
-        <service
-            android:name=".zapret.ZapretEngineService"
-            android:foregroundServiceType="specialUse"
-            android:exported="false">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="dpi-bypass" />
-        </service>
 
         <service android:name=".services.ByeDpiVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"

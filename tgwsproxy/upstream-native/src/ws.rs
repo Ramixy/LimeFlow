@@ -14,7 +14,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
 
 // ---------------------------------------------------------------------------
@@ -85,7 +84,14 @@ use once_cell::sync::Lazy;
 
 // Глобальный TLS-конфиг с session resumption cache (аналог tls.NewLRUClientSessionCache(100))
 static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
-    let mut cfg = ClientConfig::builder()
+    // Только X25519, как в tg-ws-proxy 1.11.3: гибрид X25519MLKEM768 раздувает
+    // ClientHello до двух TCP-сегментов, на чём срабатывает DPI (TimeoutError).
+    // ring его и так не предлагает, но список групп закреплён явно.
+    let mut provider = rustls::crypto::ring::default_provider();
+    provider.kx_groups = vec![rustls::crypto::ring::kx_group::X25519];
+    let mut cfg = ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .expect("TLS 1.2/1.3 с ring")
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(NoVerify))
         .with_no_client_auth();
@@ -176,8 +182,8 @@ impl From<std::io::Error> for WsError {
 // ---------------------------------------------------------------------------
 
 pub struct RawWebSocket {
-    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>>,
-    writer: tokio::sync::Mutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<WsIo>>>,
+    writer: tokio::sync::Mutex<tokio::io::WriteHalf<WsIo>>,
     frag: tokio::sync::Mutex<Vec<u8>>,
     pub closed: AtomicBool,
 }
@@ -345,7 +351,7 @@ impl RawWebSocket {
 
 // Чтение одного фрейма из уже захваченного reader.
 async fn read_frame_locked(
-    reader: &mut BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>,
+    reader: &mut BufReader<tokio::io::ReadHalf<WsIo>>,
 ) -> Result<(u8, Vec<u8>, bool), WsError> {
     let mut hdr = [0u8; 2];
     reader.read_exact(&mut hdr).await?;
@@ -456,6 +462,101 @@ pub fn build_frame(opcode: u8, data: &[u8], mask: bool) -> Vec<u8> {
 // Connection helpers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// SplitStream: обход DPI для своего сервера
+// ---------------------------------------------------------------------------
+//
+// Мобильный ТСПУ глушит TLS-рукопожатие к зарубежному VPS независимо от SNI:
+// TCP проходит, ClientHello пропадает. Как в byedpi (-s1 + мелкие сегменты),
+// начало соединения уходит отдельными маленькими TCP-сегментами, которые DPI
+// не собирает, а сам ClientHello дополнительно порезан на TLS-записи
+// (FRAG_TLS_CONFIG). Для Telegram и Cloudflare поток не меняется.
+
+const SPLIT_PLAN: &[usize] = &[1, 5, 16, 24, 32];
+const SPLIT_CHUNK: usize = 48;
+const SPLIT_LIMIT: usize = 2048;
+
+pub struct SplitStream {
+    inner: TcpStream,
+    split: bool,
+    sent: usize,
+    writes: usize,
+}
+
+impl SplitStream {
+    pub fn new(inner: TcpStream, split: bool) -> Self {
+        SplitStream { inner, split, sent: 0, writes: 0 }
+    }
+
+    fn cap(&self, len: usize) -> usize {
+        if !self.split || self.sent >= SPLIT_LIMIT {
+            return len;
+        }
+        let step = SPLIT_PLAN.get(self.writes).copied().unwrap_or(SPLIT_CHUNK);
+        len.min(step).min(SPLIT_LIMIT - self.sent).max(1)
+    }
+}
+
+impl tokio::io::AsyncRead for SplitStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl tokio::io::AsyncWrite for SplitStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        let n = self.cap(buf.len());
+        match std::pin::Pin::new(&mut self.inner).poll_write(cx, &buf[..n]) {
+            std::task::Poll::Ready(Ok(w)) => {
+                self.sent += w;
+                self.writes += 1;
+                std::task::Poll::Ready(Ok(w))
+            }
+            other => other,
+        }
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+// Поток WebSocket: TLS или, для своего сервера в режиме без TLS, голый TCP.
+pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin> AsyncStream for T {}
+pub type WsIo = Box<dyn AsyncStream>;
+
+// ClientHello своему серверу режется на TLS-записи по 64 байта.
+pub static FRAG_TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
+    let mut cfg = (**TLS_CONFIG).clone();
+    cfg.max_fragment_size = Some(64);
+    Arc::new(cfg)
+});
+
+pub static FRAG_H2_TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
+    let mut cfg = (**H2_TLS_CONFIG).clone();
+    cfg.max_fragment_size = Some(64);
+    Arc::new(cfg)
+});
+
 fn set_sock_opts(stream: &TcpStream) {
     if TCP_NODELAY {
         let _ = stream.set_nodelay(true);
@@ -500,7 +601,14 @@ pub async fn ws_connect_once(
         return Err(WsError::Other("empty dial address".to_string()));
     }
 
-    let target_addr = format!("{}:443", dial_addr);
+    let endpoint = crate::cfproxy::user_endpoint(domain);
+    let own_server = endpoint.is_some();
+    // Свой сервер без TLS: ТСПУ режет TLS-рукопожатие к VPS по IP, а обычный
+    // HTTP пропускает. MTProto внутри и так зашифрован. В Host — маскировочное
+    // имя, DC — в пути (/tg/<dc>/apiws), его разбирает nginx на VPS.
+    let plain = own_server && OWN_SERVER_PLAIN.load(Ordering::Relaxed);
+    let port = if plain { 80 } else { 443 };
+    let target_addr = format!("{}:{}", dial_addr, port);
 
     let raw_conn = match tokio::time::timeout(timeout, TcpStream::connect(&target_addr)).await {
         Ok(Ok(c)) => c,
@@ -508,27 +616,41 @@ pub async fn ws_connect_once(
         Err(_) => return Err(WsError::Timeout),
     };
     set_sock_opts(&raw_conn);
+    let raw_conn = SplitStream::new(raw_conn, own_server);
 
-    let connector = TlsConnector::from(TLS_CONFIG.clone());
-    let sni = server_name(domain);
-
-    let handshake_timeout = ws_handshake_timeout(timeout);
-    let tls_conn =
-        match tokio::time::timeout(handshake_timeout, connector.connect(sni, raw_conn)).await {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => {
-                if e.kind() != std::io::ErrorKind::ConnectionReset {
-                    ldebug!(" ws tls fail {} via {}: {}", domain, dial_addr, e);
-                }
-                return Err(WsError::Io(e));
-            }
-            Err(_) => {
-                ldebug!(" ws tls fail {} via {}: timeout", domain, dial_addr);
-                return Err(WsError::Timeout);
-            }
+    let (stream, req_path, req_host): (WsIo, String, String) = if plain {
+        let dc = domain
+            .strip_prefix("kws")
+            .and_then(|r| r.split('.').next())
+            .unwrap_or("2")
+            .to_string();
+        let cover = endpoint.map(|(_, c)| c).unwrap_or_else(|| domain.to_string());
+        (Box::new(raw_conn), format!("/tg/{}{}", dc, path), cover)
+    } else {
+        let connector = TlsConnector::from(if own_server { FRAG_TLS_CONFIG.clone() } else { TLS_CONFIG.clone() });
+        let sni = match endpoint {
+            Some((_, cover)) => server_name(&cover),
+            None => server_name(domain),
         };
+        let handshake_timeout = ws_handshake_timeout(timeout);
+        let tls_conn =
+            match tokio::time::timeout(handshake_timeout, connector.connect(sni, raw_conn)).await {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => {
+                    if e.kind() != std::io::ErrorKind::ConnectionReset {
+                        ldebug!(" ws tls fail {} via {}: {}", domain, dial_addr, e);
+                    }
+                    return Err(WsError::Io(e));
+                }
+                Err(_) => {
+                    ldebug!(" ws tls fail {} via {}: timeout", domain, dial_addr);
+                    return Err(WsError::Timeout);
+                }
+            };
+        (Box::new(tls_conn), path.to_string(), domain.to_string())
+    };
 
-    let (read_half, mut write_half) = tokio::io::split(tls_conn);
+    let (read_half, mut write_half) = tokio::io::split(stream);
 
     // websocket key
     let mut ws_key_bytes = [0u8; 16];
@@ -543,9 +665,8 @@ pub async fn ws_connect_once(
          Sec-WebSocket-Key: {}\r\n\
          Sec-WebSocket-Version: 13\r\n\
          Sec-WebSocket-Protocol: binary\r\n\r\n",
-        path, domain, ws_key
+        req_path, req_host, ws_key
     );
-
     match tokio::time::timeout(timeout, write_half.write_all(req.as_bytes())).await {
         Ok(Ok(())) => {}
         Ok(Err(e)) => return Err(WsError::Io(e)),

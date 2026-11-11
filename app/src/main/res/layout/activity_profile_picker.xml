@@ -75,7 +75,7 @@
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         app:cardBackgroundColor="@android:color/transparent"
-        app:cardCornerRadius="14dp"
+        app:cardCornerRadius="20dp"
         app:cardElevation="0dp">
 
         <LinearLayout
@@ -126,10 +126,10 @@
         android:foreground="?attr/selectableItemBackground"
         android:visibility="gone"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="12dp"
+        app:cardCornerRadius="18dp"
         app:cardElevation="0dp"
         app:strokeColor="?attr/colorPrimary"
-        app:strokeWidth="1dp">
+        app:strokeWidth="0dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -175,7 +175,7 @@
         android:focusable="true"
         android:foreground="?attr/selectableItemBackground"
         app:cardBackgroundColor="@android:color/transparent"
-        app:cardCornerRadius="12dp"
+        app:cardCornerRadius="18dp"
         app:cardElevation="0dp">
 
         <LinearLayout
@@ -265,7 +265,7 @@
                 app:iconSize="14dp"
                 app:iconTint="@null"
                 app:strokeColor="?attr/colorControlHighlight"
-                app:strokeWidth="1dp" />
+                app:strokeWidth="0dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/chip_discord"
@@ -289,7 +289,7 @@
                 app:iconSize="14dp"
                 app:iconTint="@null"
                 app:strokeColor="?attr/colorControlHighlight"
-                app:strokeWidth="1dp" />
+                app:strokeWidth="0dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/chip_operator"
@@ -308,7 +308,7 @@
                 app:backgroundTint="?attr/colorSurface"
                 app:cornerRadius="18dp"
                 app:strokeColor="?attr/colorControlHighlight"
-                app:strokeWidth="1dp" />
+                app:strokeWidth="0dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/chip_other"
@@ -327,7 +327,7 @@
                 app:backgroundTint="?attr/colorSurface"
                 app:cornerRadius="18dp"
                 app:strokeColor="?attr/colorControlHighlight"
-                app:strokeWidth="1dp" />
+                app:strokeWidth="0dp" />
         </LinearLayout>
     </HorizontalScrollView>
 
@@ -338,7 +338,7 @@
         android:layout_marginTop="6dp"
         android:visibility="gone"
         app:cardBackgroundColor="#090C10"
-        app:cardCornerRadius="14dp"
+        app:cardCornerRadius="20dp"
         app:cardElevation="0dp">
 
         <ScrollView
@@ -368,10 +368,10 @@
         android:foreground="?attr/selectableItemBackground"
         android:visibility="gone"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="18dp"
+        app:cardCornerRadius="22dp"
         app:cardElevation="0dp"
         app:strokeColor="?attr/colorControlHighlight"
-        app:strokeWidth="1dp">
+        app:strokeWidth="0dp">
 
         <LinearLayout
             android:layout_width="match_parent"

@@ -1,5 +1,5 @@
 // HTTP/2 мультиплексирование медиа через CF-прокси (порт cf_h2.py из
-// Flowseal/tg-ws-proxy 1.11.1). Каждый MTProto-пакет клиента уходит отдельным
+// Flowseal/tg-ws-proxy 1.11.2). Каждый MTProto-пакет клиента уходит отдельным
 // POST https://kwsN.<cf-domain>/api по одному общему H2-соединению на домен,
 // тело ответа — пакет для клиента. Вместо пачки WS-подключений на загрузку
 // медиа получается одно TCP/TLS-соединение.
@@ -7,7 +7,7 @@
 use crate::cfproxy::{cfproxy_429_cooldown_remaining, resolve_doh, set_active_domain_and_save};
 use crate::config::*;
 use crate::crypto::TrackedStream;
-use crate::ws::H2_TLS_CONFIG;
+use crate::ws::{SplitStream, FRAG_H2_TLS_CONFIG, H2_TLS_CONFIG};
 use crate::{ldebug, linfo, lwarn};
 use bytes::Bytes;
 use h2::client::SendRequest;
@@ -26,6 +26,7 @@ use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
 
 const MAX_PACKET: usize = 4 * 1024 * 1024;
+const MAX_PLAIN_PADDING: usize = 256;
 const MAX_CHANNEL_REQUESTS: usize = 8;
 const MAX_CHANNEL_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LANE_REQUESTS: usize = 64;
@@ -98,7 +99,15 @@ impl Lane {
     }
 
     async fn connect(host: &str) -> Result<Lane, H2Err> {
-        let tcp = match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host, 443))).await
+        let endpoint = crate::cfproxy::user_endpoint(host);
+        let direct_ip = endpoint.as_ref().and_then(|(ip, _)| ip.clone());
+        let tcp = match direct_ip {
+            Some(ip) => match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((ip.as_str(), 443))).await {
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => return Err(other(e)),
+                Err(_) => return Err(H2Err::Other("connect timeout".into())),
+            },
+            None => match tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host, 443))).await
         {
             Ok(Ok(s)) => s,
             _ => {
@@ -113,12 +122,17 @@ impl Lane {
                     Err(_) => return Err(H2Err::Other("connect timeout".into())),
                 }
             }
+        },
         };
         let _ = tcp.set_nodelay(true);
-        let sni = ServerName::try_from(host.to_string()).map_err(other)?;
+        let own_server = endpoint.is_some();
+        let sni_name = endpoint.map(|(_, cover)| cover).unwrap_or_else(|| host.to_string());
+        let sni = ServerName::try_from(sni_name).map_err(other)?;
+        let config = if own_server { FRAG_H2_TLS_CONFIG.clone() } else { H2_TLS_CONFIG.clone() };
+        let tcp = SplitStream::new(tcp, own_server);
         let tls = match tokio::time::timeout(
             CONNECT_TIMEOUT,
-            TlsConnector::from(H2_TLS_CONFIG.clone()).connect(sni, tcp),
+            TlsConnector::from(config).connect(sni, tcp),
         )
         .await
         {
@@ -199,7 +213,17 @@ impl Lane {
         let res = match tokio::time::timeout(REQUEST_TIMEOUT, self.post_inner(body, receiving)).await
         {
             Ok(r) => r,
-            Err(_) => Err(H2Err::Other("request timeout".into())),
+            Err(_) => {
+                // Соединение может оставаться ESTABLISHED, хотя путь уже не
+                // доставляет данные. Если это был последний активный запрос
+                // (держим только свой слот), лейн пересоздаётся при следующем
+                // open(), а не живёт дальше после кулдауна (tg-ws-proxy 1.11.2).
+                if self.slots.available_permits() + 1 >= MAX_LANE_REQUESTS {
+                    self.dead.store(true, Ordering::Relaxed);
+                    lwarn!(" H2 lane={} {}: нет ответа, переподключаемся", self.id, self.host);
+                }
+                Err(H2Err::Other("request timeout".into()))
+            }
         };
         if let Err(H2Err::Other(_)) = &res {
             self.mark_failed();
@@ -228,6 +252,13 @@ impl Lane {
         let resp = resp.await.map_err(other)?;
         let status = resp.status().as_u16();
         let ray = header(resp.headers(), "cf-ray");
+        // Свой сервер (nginx на VPS): 404/403 на /api значит, что HTTP-транспорт
+        // не проходит через этот путь, а не ошибку MTProto. Переданный клиенту
+        // -404 Telegram воспринимает как «прокси настроен неверно» и отключает
+        // его; вместо этого лейн уходит на кулдаун и медиа идёт через WS.
+        if crate::cfproxy::user_endpoint(&self.host).is_some() && matches!(status, 403 | 404) {
+            return Err(H2Err::Other(format!("/api HTTP {} на своём сервере", status)));
+        }
         if matches!(status, 403 | 404 | 429 | 444) {
             return Err(H2Err::Transport(
                 -(status as i32),
@@ -311,6 +342,10 @@ pub fn reset() {
 
 pub async fn open(dc: i32) -> Option<Arc<Lane>> {
     if !DC_DEFAULT_IPS.contains_key(&dc) {
+        return None;
+    }
+    // Без TLS HTTP/2 к своему серверу не поднять (нужен ALPN): медиа идёт через WS.
+    if OWN_SERVER_PLAIN.load(Ordering::Relaxed) && !CFPROXY.read().user_domain.is_empty() {
         return None;
     }
     if let Some(t) = SETUP_RETRY.lock().get(&dc) {
@@ -411,20 +446,32 @@ async fn read_packet(r: &mut OwnedReadHalf, dec: &mut TrackedStream, proto: u32)
         read_plain(r, dec, &mut b).await?;
         (u32::from_le_bytes(b) & 0x7fff_ffff) as usize
     };
-    let max = MAX_PACKET + if proto == PROTO_PADDED { 15 } else { 0 };
+    let max = MAX_PACKET + if proto == PROTO_PADDED { MAX_PLAIN_PADDING } else { 0 };
     if !(24..=max).contains(&length) {
         return Err(invalid(format!("длина пакета вне диапазона: {}", length)));
     }
     let mut body = vec![0u8; length];
     read_plain(r, dec, &mut body).await?;
     if proto == PROTO_PADDED {
-        let packet_length = if body[..8] == [0u8; 8] {
-            20 + u32::from_le_bytes([body[16], body[17], body[18], body[19]]) as usize
+        // Незашифрованные сообщения (auth_key_id == 0, DH-рукопожатие) клиенты
+        // дополняют сильнее TCP-транспорта: Telegram для Android — до 256 байт,
+        // MTProtoKit — 236 + 15. С прежним лимитом 15 такие пакеты отбрасывались,
+        // и H2-канал к медиа-DC рвался на первом же рукопожатии (tg-ws-proxy 1.11.2).
+        let (packet_length, max_padding) = if body[..8] == [0u8; 8] {
+            (
+                20usize.saturating_add(
+                    u32::from_le_bytes([body[16], body[17], body[18], body[19]]) as usize,
+                ),
+                MAX_PLAIN_PADDING,
+            )
         } else {
-            24 + ((length - 24) / 16) * 16
+            (24 + ((length - 24) / 16) * 16, 15)
         };
-        if packet_length < 24 || packet_length > length || length - packet_length > 15 {
-            return Err(invalid("неверный padded пакет".into()));
+        if packet_length < 24 || packet_length > length || length - packet_length > max_padding {
+            return Err(invalid(format!(
+                "неверный padded пакет: frame={} packet={} limit={}",
+                length, packet_length, max_padding
+            )));
         }
         body.truncate(packet_length);
     }
@@ -483,6 +530,9 @@ struct Packet {
     attempts: u32,
     last_attempt: Instant,
     replay_req: Option<u64>,
+    // Первые 24 байта последнего ответа на этот пакет: новый ответ значит, что
+    // сервер ещё отдаёт данные, и бюджет опросов восстанавливается.
+    reply_id: Option<[u8; 24]>,
 }
 
 struct ChState {
@@ -535,8 +585,21 @@ impl Channel {
                 st.reqs.remove(&id);
                 st.last_progress = Instant::now();
                 if let Some(p) = st.packet.as_mut() {
+                    let own = p.replay_req == Some(id) || p.original == id;
                     if p.replay_req == Some(id) {
                         p.replay_req = None;
+                    }
+                    // Клиент ждёт пачку ответов и молчит между ними: пока
+                    // приходят новые ответы, опросы не должны исчерпаться
+                    // (tg-ws-proxy 1.11.2, "refill reply budget").
+                    if let Ok(reply) = &res {
+                        if own && reply.len() >= 24 {
+                            let rid: [u8; 24] = reply[..24].try_into().unwrap();
+                            if p.reply_id != Some(rid) {
+                                p.reply_id = Some(rid);
+                                p.attempts = 0;
+                            }
+                        }
                     }
                 }
             }
@@ -592,6 +655,7 @@ impl Channel {
             attempts: 0,
             last_attempt: now,
             replay_req: None,
+            reply_id: None,
         });
     }
 

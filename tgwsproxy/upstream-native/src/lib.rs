@@ -208,7 +208,7 @@ pub unsafe extern "C" fn SetCfProxyConfig(
     c_user_domain: *const c_char,
 ) {
     CFPROXY_ENABLED.store(enabled != 0, Ordering::Relaxed);
-    let user_domain = cstr_to_string(c_user_domain);
+    let user_domain = cfproxy::clean_user_domain(&cstr_to_string(c_user_domain));
     let mut cfg = CFPROXY.write();
     cfg.user_domain = user_domain.clone();
     if !user_domain.is_empty() {
@@ -229,6 +229,20 @@ pub unsafe extern "C" fn SetSecret(c_secret: *const c_char) {
         return;
     }
     *PROXY_SECRET.write() = s;
+}
+
+/// SNI-маскировка для своего сервера (пусто — без подмены).
+/// # Safety
+/// `c_sni` — валидная C-строка или null.
+#[no_mangle]
+pub unsafe extern "C" fn SetCoverSni(c_sni: *const c_char) {
+    *COVER_SNI.write() = cstr_to_string(c_sni).trim().to_lowercase();
+}
+
+/// Свой сервер без TLS: HTTP WebSocket на порт 80 (HTTP/2 для него выключается).
+#[no_mangle]
+pub extern "C" fn SetOwnServerPlain(enabled: c_int) {
+    OWN_SERVER_PLAIN.store(enabled != 0, Ordering::Relaxed);
 }
 
 #[no_mangle]

@@ -63,15 +63,6 @@
             android:defaultValue="false" />
 
         <Preference
-            android:key="zapret_engine"
-            android:title="@string/zapret_engine_title"
-            android:summary="@string/zapret_engine_summary"
-            android:icon="@drawable/ic_limeflow_logo">
-            <intent android:targetClass="io.github.dovecoteescapee.byedpi.activities.ZapretEngineActivity"
-                android:targetPackage="io.github.dovecoteescapee.byedpi" />
-        </Preference>
-
-        <Preference
             android:key="byedpi_ui_settings"
             android:title="@string/ui_editor"
             app:useSimpleSummaryProvider="true"

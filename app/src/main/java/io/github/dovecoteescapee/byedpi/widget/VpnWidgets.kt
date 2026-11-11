@@ -49,15 +49,8 @@ object VpnWidgets {
         }
     }
 
-    /* The strategy line follows the selected engine: byedpi catalog or zapret. */
     private fun currentStrategyName(context: Context): String =
-        if (ServiceManager.isZapretEngine(context)) {
-            val id = ServiceManager.zapretStrategy(context)
-            io.github.dovecoteescapee.byedpi.zapret.ZapretStrategies.list()
-                .firstOrNull { it.id == id }?.name ?: "Zapret"
-        } else {
-            FlowsealProfiles.selected(context.getPreferences()).name
-        }
+        FlowsealProfiles.selected(context.getPreferences()).name
 
     private fun update1x1(context: Context, manager: AppWidgetManager) {
         val ids = manager.getAppWidgetIds(ComponentName(context, VpnWidgetReceiver::class.java))

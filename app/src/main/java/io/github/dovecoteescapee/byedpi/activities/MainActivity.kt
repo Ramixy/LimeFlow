@@ -531,8 +531,6 @@ class MainActivity : AppCompatActivity() {
         // With automatic switching on, the service applies the remembered
         // strategy itself; the manual dialog would only fight with it.
         if (preferences.getBoolean("auto_switch_network", false)) return
-        // Per-network strategies are a byedpi feature.
-        if (ServiceManager.isZapretEngine(this)) return
         val type = if (StrategyMemory.onWifi(this)) "wifi" else "mobile"
         val last = preferences.getString(StrategyMemory.NETWORK_HINT_KEY, null)
         if (last == null) {
@@ -960,31 +958,6 @@ class MainActivity : AppCompatActivity() {
     private fun start() {
         val preferences = getPreferences()
         when (ServiceManager.engineMode(this)) {
-            Mode.Zapret -> lifecycleScope.launch {
-                // su may be missing entirely; ask once and explain instead of
-                // failing inside the service.
-                val hasRoot = withContext(Dispatchers.IO) {
-                    io.github.dovecoteescapee.byedpi.zapret.ZapretEngineService.hasRoot()
-                }
-                if (hasRoot) {
-                    ServiceManager.start(this@MainActivity, Mode.Zapret)
-                    updateStatus()
-                } else {
-                    // A stuck zapret selection must not leave the user with a
-                    // permanently failing button: fall back to our engine.
-                    preferences.edit()
-                        .putString(ServiceManager.ENGINE_MODE_KEY, ServiceManager.ENGINE_BYEDPI)
-                        .apply()
-                    Toast.makeText(
-                        this@MainActivity,
-                        R.string.zapret_root_missing,
-                        Toast.LENGTH_LONG,
-                    ).show()
-                    updateDashboardInfo()
-                    start()
-                }
-            }
-
             Mode.VPN -> {
                 StrategyMemory.rememberForCurrentNetwork(
                     this,
@@ -1028,24 +1001,15 @@ class MainActivity : AppCompatActivity() {
 
         when (status) {
             AppStatus.Halted -> {
-                when (ServiceManager.engineMode(this)) {
-                    Mode.Zapret -> {
-                        binding.statusText.setText(R.string.zapret_state_halted)
-                        binding.statusButton.setText(R.string.zapret_start)
+                when (preferences.mode()) {
+                    Mode.VPN -> {
+                        binding.statusText.setText(R.string.vpn_disconnected)
+                        binding.statusButton.setText(R.string.vpn_connect)
                     }
 
-                    else -> when (preferences.mode()) {
-                        Mode.VPN -> {
-                            binding.statusText.setText(R.string.vpn_disconnected)
-                            binding.statusButton.setText(R.string.vpn_connect)
-                        }
-
-                        Mode.Proxy -> {
-                            binding.statusText.setText(R.string.proxy_down)
-                            binding.statusButton.setText(R.string.proxy_start)
-                        }
-
-                        Mode.Zapret -> Unit
+                    Mode.Proxy -> {
+                        binding.statusText.setText(R.string.proxy_down)
+                        binding.statusButton.setText(R.string.proxy_start)
                     }
                 }
                 binding.statusButton.isEnabled = true
@@ -1062,11 +1026,6 @@ class MainActivity : AppCompatActivity() {
                         binding.statusText.setText(R.string.proxy_up)
                         binding.statusButton.setText(R.string.proxy_stop)
                     }
-
-                    Mode.Zapret -> {
-                        binding.statusText.setText(R.string.zapret_state_running)
-                        binding.statusButton.setText(R.string.zapret_stop)
-                    }
                 }
                 binding.statusButton.isEnabled = true
             }
@@ -1076,14 +1035,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDashboardInfo() {
         val preferences = getPreferences()
-        val engineZapret = ServiceManager.isZapretEngine(this)
         val mode = preferences.mode()
         binding.flowModeValue.setText(
-            when {
-                engineZapret -> R.string.flow_mode_zapret
-                mode == Mode.VPN -> R.string.flow_mode_vpn
-                else -> R.string.flow_mode_local
-            }
+            if (mode == Mode.VPN) R.string.flow_mode_vpn else R.string.flow_mode_local
         )
 
         val filterMode = preferences.getString(

@@ -98,9 +98,13 @@ struct SlotState {
     // Экспоненциальный бэкофф после неудачного refill (1с .. 1ч), как в pool.py
     refill_failures: AtomicI32,
     refill_after: parking_lot::Mutex<Option<std::time::Instant>>,
+    // Фоновая ротация (tg-ws-proxy 1.11.4): протухшие соединения выбрасываются
+    // заранее, а не при выдаче клиенту, и пул пополняется без ожидания запроса.
+    rotating: std::sync::atomic::AtomicBool,
 }
 
 const REFILL_BACKOFF_INITIAL: f64 = 1.0;
+const WS_POOL_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 const REFILL_BACKOFF_MAX: f64 = 3600.0;
 
 pub struct WsPool {
@@ -125,6 +129,7 @@ impl WsPool {
                     refilling: AtomicI32::new(0),
                     refill_failures: AtomicI32::new(0),
                     refill_after: parking_lot::Mutex::new(None),
+                    rotating: std::sync::atomic::AtomicBool::new(false),
                 })
             })
             .clone()
@@ -141,6 +146,7 @@ impl WsPool {
         if POOL_SIZE.load(Ordering::Relaxed) <= 0 {
             return;
         }
+        self.start_rotation(dc, is_media, state, &target_ip, &domains);
         if let Some(t) = *state.refill_after.lock() {
             if std::time::Instant::now() < t {
                 return;
@@ -153,6 +159,100 @@ impl WsPool {
         {
             let pool = self.clone();
             let st = state.clone();
+            tokio::spawn(async move {
+                pool.refill(dc, is_media, st, target_ip, domains).await;
+            });
+        }
+    }
+
+    fn start_rotation(
+        self: &Arc<Self>,
+        dc: i32,
+        is_media: bool,
+        state: &Arc<SlotState>,
+        target_ip: &str,
+        domains: &[String],
+    ) {
+        if state
+            .rotating
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        let pool = self.clone();
+        let st = state.clone();
+        let target_ip = target_ip.to_string();
+        let domains = domains.to_vec();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = pool.cancel_token.cancelled() => break,
+                    _ = tokio::time::sleep(WS_POOL_CHECK_INTERVAL) => {}
+                }
+                let size = POOL_SIZE.load(Ordering::Relaxed);
+                if size <= 0 {
+                    break;
+                }
+                let now = now_unix();
+                let (expired, ready) = {
+                    let mut q = st.queue.lock().await;
+                    let mut expired = Vec::new();
+                    let mut keep = std::collections::VecDeque::with_capacity(q.len());
+                    for e in q.drain(..) {
+                        if is_pool_entry_usable(&e, now) {
+                            keep.push_back(e);
+                        } else {
+                            expired.push(e);
+                        }
+                    }
+                    *q = keep;
+                    (expired, q.len())
+                };
+                if !expired.is_empty() {
+                    ldebug!(
+                        " WS пул DC{}{}: ротация, {} устаревших, {} готовы",
+                        dc,
+                        media_tag(is_media),
+                        expired.len(),
+                        ready
+                    );
+                    for e in expired {
+                        tokio::spawn(async move { e.ws.close().await });
+                    }
+                }
+                if ready < (size as usize).min(16) {
+                    pool.refill_if_due(dc, is_media, &st, &target_ip, &domains);
+                }
+            }
+            st.rotating.store(false, Ordering::SeqCst);
+        });
+    }
+
+    // Пополнение из ротации: те же условия, что в try_start_refill, без
+    // повторного запуска ротации.
+    fn refill_if_due(
+        self: &Arc<Self>,
+        dc: i32,
+        is_media: bool,
+        state: &Arc<SlotState>,
+        target_ip: &str,
+        domains: &[String],
+    ) {
+        if let Some(t) = *state.refill_after.lock() {
+            if std::time::Instant::now() < t {
+                return;
+            }
+        }
+        if state
+            .refilling
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            let pool = self.clone();
+            let st = state.clone();
+            let target_ip = target_ip.to_string();
+            let domains = domains.to_vec();
             tokio::spawn(async move {
                 pool.refill(dc, is_media, st, target_ip, domains).await;
             });
@@ -632,7 +732,7 @@ pub async fn tcp_fallback(
 // ---------------------------------------------------------------------------
 
 async fn try_cfproxy_base_domain(dc: i32, base_domain: &str) -> (Option<RawWebSocket>, String) {
-    let base_domain = normalize_cf_domain(base_domain);
+    let base_domain = crate::cfproxy::cf_base_domain(base_domain);
     if base_domain.is_empty() {
         return (None, String::new());
     }
@@ -966,6 +1066,7 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
         if s == b"HEAD"
             || s == b"POST"
             || s == b"GET "
+            || s == b"OPTI"
             || s == &[0xee, 0xee, 0xee, 0xee]
             || s == &[0xdd, 0xdd, 0xdd, 0xdd]
         {

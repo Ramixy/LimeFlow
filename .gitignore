@@ -16,8 +16,6 @@
 local.properties
 /app/src/main/jniLibs
 *.apk
-!releases/
-!releases/*.apk
 *.aab
 *.jks
 *.keystore
@@ -28,4 +26,5 @@ local-secrets.properties
 gradle-build.log
 tgwsproxy/build/
 tgwsproxy/upstream-native/target/
-
+*.log
+/releases/

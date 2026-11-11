@@ -75,6 +75,7 @@ static const char help_text[] = {
     "    -c, --max-conn <count>    Connection count limit, default 512\n"
     "    -N, --no-domain           Deny domain resolving\n"
     "    -U, --no-udp              Deny UDP association\n"
+    "    -k, --block-quic          Drop UDP datagrams to port 443 (QUIC)\n"
     "    -I  --conn-ip <ip>        Connection binded IP, default ::\n"
     "    -b, --buf-size <size>     Buffer size, default 16384\n"
     "    -x, --debug <level>       Print logs, 0, 1 or 2\n"
@@ -137,6 +138,7 @@ const struct option options[] = {
     {"no-domain",     0, 0, 'N'},
     {"no-ipv6",       0, 0, 'X'},
     {"no-udp",        0, 0, 'U'},
+    {"block-quic",    0, 0, 'k'},
     {"help",          0, 0, 'h'},
     {"version",       0, 0, 'v'},
     {"ip",            1, 0, 'i'},
@@ -757,6 +759,9 @@ int parse_args(int argc, char **argv)
             break;
         case 'U':
             params.udp = 0;
+            break;
+        case 'k':
+            params.block_quic = 1;
             break;
         #ifdef __linux__
         case 'E':

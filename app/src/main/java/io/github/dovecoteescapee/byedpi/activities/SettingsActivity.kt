@@ -15,6 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.github.dovecoteescapee.byedpi.BuildConfig
 import io.github.dovecoteescapee.byedpi.R
+import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyPreferences
 import io.github.dovecoteescapee.byedpi.data.AppStatus
 import io.github.dovecoteescapee.byedpi.data.BypassHosts
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfiles
@@ -24,7 +25,6 @@ import io.github.dovecoteescapee.byedpi.fragments.ByeDpiCommandLineSettingsFragm
 import io.github.dovecoteescapee.byedpi.fragments.ByeDpiUISettingsFragment
 import io.github.dovecoteescapee.byedpi.services.ServiceManager
 import io.github.dovecoteescapee.byedpi.services.appStatus
-import io.github.dovecoteescapee.byedpi.zapret.ZapretEngineService
 import io.github.dovecoteescapee.byedpi.utility.AppIcon
 import io.github.dovecoteescapee.byedpi.utility.DevLogStore
 import io.github.dovecoteescapee.byedpi.utility.getPreferences
@@ -170,54 +170,12 @@ class SettingsActivity : AppCompatActivity() {
     private fun configureConnection() {
         val preferences = getPreferences()
 
-        // Engine switch: our byedpi (VPN/Proxy) or the root zapret engine.
-        val zapretSelected =
-            preferences.getString(ServiceManager.ENGINE_MODE_KEY, ServiceManager.ENGINE_BYEDPI) ==
-                ServiceManager.ENGINE_ZAPRET
-        binding.engineGroup.check(
-            if (zapretSelected) R.id.engine_zapret_button else R.id.engine_byedpi_button
-        )
-        applyEngineVisibility(zapretSelected)
-        binding.engineGroup.addOnButtonCheckedListener { _, checkedId, checked ->
-            if (!checked) return@addOnButtonCheckedListener
-            val isZapret = checkedId == R.id.engine_zapret_button
-            if (isZapret) {
-                // The zapret mode is impossible without root; check before
-                // committing the switch and fall back with an explanation.
-                lifecycleScope.launch {
-                    val hasRoot = withContext(Dispatchers.IO) { ZapretEngineService.hasRoot() }
-                    if (hasRoot) {
-                        preferences.edit()
-                            .putString(ServiceManager.ENGINE_MODE_KEY, ServiceManager.ENGINE_ZAPRET)
-                            .apply()
-                        applyEngineVisibility(true)
-                    } else {
-                        binding.engineGroup.check(R.id.engine_byedpi_button)
-                        MaterialAlertDialogBuilder(this@SettingsActivity)
-                            .setTitle(R.string.settings_engine_zapret)
-                            .setMessage(R.string.zapret_root_missing)
-                            .setPositiveButton(R.string.custom_strategy_cancel, null)
-                            .show()
-                    }
-                }
-            } else {
-                preferences.edit()
-                    .putString(ServiceManager.ENGINE_MODE_KEY, ServiceManager.ENGINE_BYEDPI)
-                    .apply()
-                applyEngineVisibility(false)
-            }
-        }
-        binding.engineHint.setOnClickListener {
-            startActivity(Intent(this, ZapretEngineActivity::class.java))
-        }
-
-        // Settings open while connected: engine/mode switches stay locked
-        // until disconnect (they cannot be applied mid-run), everything else
-        // just applies on the next connect.
+        // Settings open while connected: the mode switch stays locked until
+        // disconnect (it cannot be applied mid-run), everything else just
+        // applies on the next connect.
         val running = appStatus.first == AppStatus.Running
         binding.runningNote.visibility = if (running) View.VISIBLE else View.GONE
         if (running) {
-            binding.engineGroup.children.forEach { it.isEnabled = false }
             binding.modeGroup.children.forEach { it.isEnabled = false }
         }
 
@@ -246,6 +204,11 @@ class SettingsActivity : AppCompatActivity() {
         binding.ipv6Switch.setOnCheckedChangeListener { _, checked ->
             preferences.edit().putBoolean("ipv6_enable", checked).apply()
         }
+        binding.blockQuicSwitch.isChecked =
+            preferences.getBoolean(ByeDpiProxyPreferences.BLOCK_QUIC_KEY, true)
+        binding.blockQuicSwitch.setOnCheckedChangeListener { _, checked ->
+            preferences.edit().putBoolean(ByeDpiProxyPreferences.BLOCK_QUIC_KEY, checked).apply()
+        }
         binding.bootSwitch.isChecked = preferences.getBoolean("autoconnect_on_boot", false)
         binding.bootSwitch.setOnCheckedChangeListener { _, checked ->
             preferences.edit().putBoolean("autoconnect_on_boot", checked).apply()
@@ -267,15 +230,6 @@ class SettingsActivity : AppCompatActivity() {
         binding.memorySwitch.setOnCheckedChangeListener { _, checked ->
             preferences.edit().putBoolean("show_engine_memory", checked).apply()
         }
-    }
-
-    /* While zapret is selected the byedpi-only VPN/Proxy mode switch makes no
-     * sense; the hint doubles as a shortcut to the Zapret Engine screen. */
-    private fun applyEngineVisibility(zapretSelected: Boolean) {
-        binding.modeGroup.visibility =
-            if (zapretSelected) android.view.View.GONE else android.view.View.VISIBLE
-        binding.engineHint.visibility =
-            if (zapretSelected) android.view.View.VISIBLE else android.view.View.GONE
     }
 
     private fun configureNavigation() {

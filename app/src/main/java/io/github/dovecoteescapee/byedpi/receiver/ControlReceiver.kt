@@ -62,7 +62,6 @@ class ControlReceiver : BroadcastReceiver() {
             .putExtra(CONTROL_EXTRA_MODE, when (mode) {
                 Mode.VPN -> MODE_VALUE_VPN
                 Mode.Proxy -> MODE_VALUE_PROXY
-                Mode.Zapret -> MODE_VALUE_ZAPRET
             })
             .putExtra(CONTROL_EXTRA_PAUSED, false)
         context.sendBroadcast(response)

@@ -74,6 +74,14 @@ pub static CFPROXY: Lazy<RwLock<CfproxyConfig>> = Lazy::new(|| {
     })
 });
 
+// SNI, который уходит в ClientHello при подключении к своему серверу вместо
+// настоящего kwsN.<домен>. Настоящее имя едет в Host внутри TLS, nginx на VPS
+// выбирает DC по нему. Пусто — SNI не подменяется.
+pub static COVER_SNI: Lazy<RwLock<String>> = Lazy::new(|| RwLock::new("vk.com".to_string()));
+
+// Свой сервер без TLS (HTTP WebSocket на порт 80): когда ТСПУ режет TLS к VPS.
+pub static OWN_SERVER_PLAIN: AtomicBool = AtomicBool::new(false);
+
 pub static CFPROXY_429: Lazy<RwLock<HashMap<String, Cfproxy429State>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
@@ -85,7 +93,12 @@ pub static PROXY_SECRET: Lazy<RwLock<String>> =
     Lazy::new(|| RwLock::new("00000000000000000000000000000000".to_string()));
 
 pub static CFPROXY_ENC: &[&str] = &[
+    // Порядок как в tg-ws-proxy 1.11.2: первыми идут домены, которые чаще
+    // остаются доступными.
     "virkgj.com",
+    "vmmzovy.com",
+    "mkuosckvso.com",
+    "zaewayzmplad.com",
     "twdmbzcm.com",
     "awzwsldi.com",
     "clngqrflngqin.com",
@@ -99,11 +112,8 @@ pub static CFPROXY_ENC: &[&str] = &[
     "xwuwoqbm.com",
     "orgcnunpj.com",
     "zhkuldz.com",
-    "efabnxaowuzs.com",
-    "vmmzovy.com",
-    "mkuosckvso.com",
-    "zaewayzmplad.com",
     "zypoljnslxa.com",
+    "efabnxaowuzs.com",
     "zaftuzsftqdq.com",
 ];
 

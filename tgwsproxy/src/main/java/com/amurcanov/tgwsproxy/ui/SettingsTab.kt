@@ -90,6 +90,10 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
+    val savedCoverSni by settingsStore.coverSni.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_COVER_SNI)
+    val ownServerPlain by settingsStore.ownServerPlain.collectAsStateWithLifecycle(initialValue = false)
+    val savedVpsHost by settingsStore.vpsHost.collectAsStateWithLifecycle(initialValue = "")
+    val savedVpsUser by settingsStore.vpsUser.collectAsStateWithLifecycle(initialValue = "root")
     val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
     val h2Enabled by settingsStore.cfH2Enabled.collectAsStateWithLifecycle(initialValue = true)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
@@ -126,6 +130,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
     var cfEnabled by rememberSaveable(savedCfEnabled) { mutableStateOf(savedCfEnabled) }
     var customCfDomainEnabled by rememberSaveable(savedCustomDomainEnabled) { mutableStateOf(savedCustomDomainEnabled) }
     var customCfDomain by rememberSaveable(savedCustomDomain) { mutableStateOf(savedCustomDomain) }
+    var coverSniText by rememberSaveable(savedCoverSni) { mutableStateOf(savedCoverSni) }
     var secretKeyText by remember(savedSecretKey) { mutableStateOf(if (savedSecretKey == "LOADING") "" else savedSecretKey) }
 
     LaunchedEffect(savedSecretKey) {
@@ -154,7 +159,36 @@ fun SettingsTab(settingsStore: SettingsStore) {
     }
 
     var showIpSetupDialog by rememberSaveable { mutableStateOf(false) }
+    var showVpsDialog by rememberSaveable { mutableStateOf(false) }
+    var showProbeDialog by remember { mutableStateOf(false) }
     val scrollState = rememberScrollState()
+
+    if (showProbeDialog) {
+        ServerProbeDialog(
+            domain = customCfDomain,
+            coverSni = coverSniText,
+            onDismiss = { showProbeDialog = false }
+        )
+    }
+
+    if (showVpsDialog) {
+        VpsSetupDialog(
+            onDismiss = { showVpsDialog = false },
+            onInstalled = { domain, plain ->
+                // Own server only works through the CF path of the engine.
+                cfEnabled = true
+                isDcAuto = true
+                customCfDomain = domain
+                customCfDomainEnabled = true
+                scheduleSave()
+                if (plain != null) scope.launch { settingsStore.saveOwnServerPlain(plain) }
+            },
+            coverSni = coverSniText,
+            savedHost = savedVpsHost,
+            savedUser = savedVpsUser,
+            onRemember = { host, user -> scope.launch { settingsStore.saveVps(host, user) } }
+        )
+    }
 
     if (showIpSetupDialog) {
         IpSetupDialog(
@@ -427,6 +461,106 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     },
                     enabled = cfEnabled && !isRunning
                 )
+            }
+
+            // Own server instead of the public CF domains: either a domain the
+            // user already points at Cloudflare/VPS, or one set up right here.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Свой сервер / домен",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(
+                    checked = customCfDomainEnabled,
+                    onCheckedChange = {
+                        customCfDomainEnabled = it
+                        scheduleSave()
+                    },
+                    enabled = cfEnabled && !isRunning && customCfDomain.isNotBlank()
+                )
+            }
+            OutlinedTextField(
+                value = customCfDomain,
+                onValueChange = { value ->
+                    customCfDomain = value.trim().lowercase()
+                    if (customCfDomain.isBlank()) customCfDomainEnabled = false
+                    scheduleSave()
+                },
+                label = { Text("Домен (без kws1.)") },
+                placeholder = { Text("1-2-3-4.sslip.io") },
+                singleLine = true,
+                enabled = !isRunning,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                )
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Без TLS (порт 80)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Если провайдер режет TLS к серверу. Telegram и так шифрует трафик",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = ownServerPlain,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveOwnServerPlain(enabled) }
+                    },
+                    enabled = !isRunning
+                )
+            }
+            OutlinedTextField(
+                value = coverSniText,
+                onValueChange = { value ->
+                    coverSniText = value.trim().lowercase()
+                    scope.launch { settingsStore.saveCoverSni(coverSniText) }
+                },
+                label = { Text("Маскировка SNI (пусто — выкл.)") },
+                supportingText = { Text("Это имя видит провайдер вместо адреса вашего сервера") },
+                singleLine = true,
+                enabled = !isRunning,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                )
+            )
+            OutlinedButton(
+                onClick = { showVpsDialog = true },
+                enabled = !isRunning,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Icon(Icons.Default.Cloud, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Настроить свой VPS", fontWeight = FontWeight.SemiBold)
+            }
+            OutlinedButton(
+                onClick = { showProbeDialog = true },
+                enabled = customCfDomain.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Icon(Icons.Default.Public, null, Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Проверить сервер", fontWeight = FontWeight.SemiBold)
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))

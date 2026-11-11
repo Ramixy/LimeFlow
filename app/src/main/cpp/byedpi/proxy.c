@@ -790,6 +790,12 @@ int on_udp_tunnel(struct poolhd *pool, struct eval *val, int et)
                 LOG(LOG_E, "udp parse error\n");
                 return -1;
             }
+            // QUIC is dropped silently: the client gives up on UDP/443 and
+            // falls back to TCP+TLS, where the desync groups do work.
+            // sin_port and sin6_port share the same offset.
+            if (params.block_quic && addr.in.sin_port == htons(443)) {
+                continue;
+            }
             if (!pair->addr.in.sin_port) {
                 if (params.baddr.sa.sa_family == AF_INET6) {
                     map_fix(&addr, 6);

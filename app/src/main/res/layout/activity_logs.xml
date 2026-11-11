@@ -61,10 +61,10 @@
             android:layout_marginTop="8dp"
             android:layout_weight="1"
             app:cardBackgroundColor="@color/app_surface"
-            app:cardCornerRadius="24dp"
+            app:cardCornerRadius="28dp"
             app:cardElevation="0dp"
             app:strokeColor="@color/app_stroke"
-            app:strokeWidth="1dp">
+            app:strokeWidth="0dp">
 
             <FrameLayout
                 android:layout_width="match_parent"

@@ -35,6 +35,11 @@ class FakePayloadsTest {
     }
 
     @Test
+    fun `sferum tls fake matches zapret binary`() {
+        checkRaw("FAKE_TLS_SFERUM", FakePayloads.FAKE_TLS_SFERUM, 661, intArrayOf(0x16, 0x03, 0x01))
+    }
+
+    @Test
     fun `4pda tls fake matches zapret binary`() {
         checkRaw("FAKE_TLS_4PDA", FakePayloads.FAKE_TLS_4PDA, 284, intArrayOf(0x16, 0x03, 0x01))
     }

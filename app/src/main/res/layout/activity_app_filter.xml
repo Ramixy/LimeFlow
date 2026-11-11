@@ -40,9 +40,9 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="24dp"
+        app:cardCornerRadius="28dp"
         app:strokeColor="?attr/colorControlHighlight"
-        app:strokeWidth="1dp">
+        app:strokeWidth="0dp">
 
         <RadioGroup
             android:id="@+id/filter_mode"
