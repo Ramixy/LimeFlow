@@ -167,7 +167,11 @@ object ServerProbe {
             val ctx = SSLContext.getInstance("TLS").apply { init(null, trustAll, SecureRandom()) }
             engine = ctx.createSSLEngine(sni, 443).apply {
                 useClientMode = true
-                sslParameters = sslParameters.apply { serverNames = listOf(SNIHostName(sni)) }
+                // Android 6 has no SNIHostName; there Conscrypt sends the peer
+                // host given to createSSLEngine as SNI.
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    sslParameters = sslParameters.apply { serverNames = listOf(SNIHostName(sni)) }
+                }
             }
             netIn = ByteBuffer.allocate(engine.session.packetBufferSize).apply { flip() }
             appIn = ByteBuffer.allocate(engine.session.applicationBufferSize).apply { flip() }
