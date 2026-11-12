@@ -232,7 +232,7 @@ object StrategyTestRunner {
         // A per-run free port keeps the check away from the app's own SOCKS service
         // and from any engine instance left behind by a previous session.
         val port = findFreePort()
-        val engine = ByeDpiProxy()
+        val engine = ByeDpiProxy(RustEngine.isSelected(context))
         val engineExited = AtomicBoolean(false)
         val engineJob = launch(Dispatchers.IO) {
             try {
@@ -288,7 +288,7 @@ object StrategyTestRunner {
             withContext(NonCancellable + Dispatchers.IO) {
                 runCatching { engine.stopProxy() }
                 if (withTimeoutOrNull(PROXY_STOP_TIMEOUT_MS) { engineJob.join() } == null) {
-                    runCatching { engine.jniForceClose() }
+                    runCatching { engine.forceClose() }
                     engineJob.cancel()
                 }
                 delay(BETWEEN_STRATEGIES_DELAY_MS)
@@ -374,7 +374,7 @@ object StrategyTestRunner {
                     writer.write(
                         "GET ${target.path} HTTP/1.1\r\n" +
                             "Host: $host\r\n" +
-                            "Range: bytes=0-16383\r\n" +
+                            "Range: bytes=0-${maxOf(16_383, target.minBytes + 4_095)}\r\n" +
                             "Accept: */*\r\n" +
                             "Connection: close\r\n\r\n"
                     )
@@ -573,6 +573,16 @@ object StrategyTestRunner {
             ServiceCategory.YOUTUBE,
             path = "/vi/dQw4w9WgXcQ/hqdefault.jpg",
             minBytes = 512,
+        ),
+        // ТСПУ часто пропускает рукопожатие и первые 16–20 КБ, а потом
+        // «замораживает» соединение: стратегия выглядит рабочей, но видео и
+        // картинки не грузятся. Крупная превью-картинка ловит это.
+        TestTarget(
+            "YouTubeFreeze64K",
+            "i.ytimg.com",
+            ServiceCategory.YOUTUBE,
+            path = "/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+            minBytes = 40_000,
         ),
         TestTarget(
             "YouTubeAPI",

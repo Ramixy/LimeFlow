@@ -14,6 +14,7 @@ import io.github.dovecoteescapee.byedpi.activities.MainActivity
 import io.github.dovecoteescapee.byedpi.activities.AppFilterActivity
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyPreferences
+import io.github.dovecoteescapee.byedpi.core.RustEngine
 import io.github.dovecoteescapee.byedpi.core.TProxyService
 import io.github.dovecoteescapee.byedpi.data.*
 import io.github.dovecoteescapee.byedpi.receiver.ScreenEventsController
@@ -33,7 +34,9 @@ import java.io.File
 import java.util.Locale
 
 class ByeDpiVpnService : LifecycleVpnService() {
-    private val byeDpiProxy = ByeDpiProxy()
+    private var byeDpiProxy = ByeDpiProxy()
+    /** Engine of the current session, fixed at start so stop matches it. */
+    private var rustSession = false
     private var proxyJob: Job? = null
     private var trafficJob: Job? = null
     private var tunFd: ParcelFileDescriptor? = null
@@ -178,6 +181,9 @@ class ByeDpiVpnService : LifecycleVpnService() {
         }
 
         val preferences = getByeDpiPreferences()
+        rustSession = RustEngine.isSelected(this)
+        byeDpiProxy = ByeDpiProxy(rustSession)
+        AppLog.i(TAG, if (rustSession) "Engine: Rust" else "Engine: C")
 
         proxyJob = lifecycleScope.launch(Dispatchers.IO) {
             val code = try {
@@ -235,7 +241,7 @@ class ByeDpiVpnService : LifecycleVpnService() {
         }
         if (completed == null) {
             AppLog.w(TAG, "Proxy did not stop in time; forcing socket close")
-            runCatching { byeDpiProxy.jniForceClose() }
+            runCatching { byeDpiProxy.forceClose() }
                 .onFailure { AppLog.e(TAG, "Forced proxy close failed", it) }
         }
         proxyJob = null
@@ -282,7 +288,13 @@ class ByeDpiVpnService : LifecycleVpnService() {
 
         this.tunFd = fd
 
-        TProxyService.TProxyStartService(configPath.absolutePath, fd.fd)
+        if (rustSession) {
+            // tun2proxy (Rust); MTU 1500 keeps its userspace TCP stack happy.
+            val code = RustEngine.nativeStartTun(fd.fd, port, 1500, ipv6)
+            check(code == 0) { "tun2proxy failed to start ($code)" }
+        } else {
+            TProxyService.TProxyStartService(configPath.absolutePath, fd.fd)
+        }
         startTrafficUpdates()
 
         AppLog.i(TAG, "Tun2Socks started")
@@ -298,7 +310,9 @@ class ByeDpiVpnService : LifecycleVpnService() {
 
         trafficJob?.cancel()
         trafficJob = null
-        runCatching { TProxyService.TProxyStopService() }
+        runCatching {
+            if (rustSession) RustEngine.nativeStopTun() else TProxyService.TProxyStopService()
+        }
             .onFailure { AppLog.e(TAG, "Failed to stop Tun2Socks", it) }
 
         try {
@@ -366,7 +380,9 @@ class ByeDpiVpnService : LifecycleVpnService() {
             var prevSent = -1L
             var prevReceived = -1L
             while (isActive) {
-                val stats = runCatching { TProxyService.TProxyGetStats() }.getOrNull()
+                val stats = runCatching {
+                    if (rustSession) RustEngine.nativeTunStats() else TProxyService.TProxyGetStats()
+                }.getOrNull()
                     ?.takeIf { it.size >= 4 }
                     ?: longArrayOf(0, 0, 0, 0)
                 val sent = stats[1].coerceAtLeast(0)

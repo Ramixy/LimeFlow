@@ -23,6 +23,14 @@
             android:defaultValue="vpn"
             app:useSimpleSummaryProvider="true" />
 
+        <DropDownPreference
+            android:key="engine_impl"
+            android:title="@string/engine_setting"
+            android:entries="@array/engine_impls"
+            android:entryValues="@array/engine_impls_entries"
+            android:defaultValue="c"
+            app:useSimpleSummaryProvider="true" />
+
         <com.takisoft.preferencex.EditTextPreference
             android:key="dns_ip"
             android:title="@string/dbs_ip_setting"

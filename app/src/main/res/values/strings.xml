@@ -176,6 +176,7 @@
     <string name="byedpi_tcp_fast_open_setting">TCP Fast Open</string>
     <string name="byedpi_udp_fake_count">UDP fake count</string>
     <string name="ipv6_setting">IPv6</string>
+    <string name="engine_setting">Движок обхода</string>
     <string name="byedpi_fake_offset_setting">Fake offset</string>
     <string name="byedpi_drop_sack_setting">Drop SACK</string>
     <string name="desync_udp_category">UDP</string>

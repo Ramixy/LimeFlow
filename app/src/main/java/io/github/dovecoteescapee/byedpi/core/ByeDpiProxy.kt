@@ -1,20 +1,33 @@
 package io.github.dovecoteescapee.byedpi.core
 
-class ByeDpiProxy {
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * DPI bypass proxy. [useRust] picks the Rust engine (liblfengine) instead of
+ * the classic C ByeDPI fork; both take the same command line.
+ */
+class ByeDpiProxy(private val useRust: Boolean = false) {
     companion object {
         init {
             System.loadLibrary("byedpi")
         }
+
+        private val nextId = AtomicInteger(1)
     }
+
+    private val rustId = nextId.getAndIncrement()
 
     fun startProxy(preferences: ByeDpiProxyPreferences): Int {
         val args = prepareArgs(preferences)
-        return jniStartProxy(args)
+        return if (useRust) RustEngine.nativeStartProxy(rustId, args) else jniStartProxy(args)
     }
 
-    fun stopProxy(): Int {
-        return jniStopProxy()
-    }
+    fun stopProxy(): Int =
+        if (useRust) RustEngine.nativeStopProxy(rustId) else jniStopProxy()
+
+    /** Last-resort stop; the Rust engine has no listening fd to close by hand. */
+    fun forceClose(): Int =
+        if (useRust) RustEngine.nativeStopProxy(rustId) else jniForceClose()
 
     private fun prepareArgs(preferences: ByeDpiProxyPreferences): Array<String> =
         when (preferences) {
@@ -34,5 +47,5 @@ class ByeDpiProxy {
 
     private external fun jniStartProxy(args: Array<String>): Int
     private external fun jniStopProxy(): Int
-    external fun jniForceClose(): Int
+    private external fun jniForceClose(): Int
 }

@@ -130,7 +130,8 @@ static int probe_remote_ttl(const union sockaddr_u *peer)
         if (connect(fd, &peer->sa, sizeof(*peer)) < 0) {
             break;
         }
-        unsigned char req[64];
+        /* QUIC servers ignore Initial datagrams shorter than 1200 bytes. */
+        unsigned char req[1200];
         memset(req, 0, sizeof(req));
         req[0] = 0xC0;
         req[1] = 0x1a; req[2] = 0x2a; req[3] = 0x3a; req[4] = 0x4a;
@@ -158,7 +159,9 @@ static int probe_remote_ttl(const union sockaddr_u *peer)
         }
         for (struct cmsghdr *cm = CMSG_FIRSTHDR(&msg); cm;
                 cm = CMSG_NXTHDR(&msg, cm)) {
-            if ((cm->cmsg_level == IPPROTO_IP && cm->cmsg_type == IP_RECVTTL)
+            /* Linux delivers the IPv4 TTL as IP_TTL, not IP_RECVTTL. */
+            if ((cm->cmsg_level == IPPROTO_IP
+                        && (cm->cmsg_type == IP_TTL || cm->cmsg_type == IP_RECVTTL))
                     || (cm->cmsg_level == IPPROTO_IPV6
                         && cm->cmsg_type == IPV6_HOPLIMIT)) {
                 rttl = *(int *)CMSG_DATA(cm);
@@ -195,7 +198,9 @@ static int fake_ttl_for(const struct desync_params *opt, int fd)
     if (obs <= 0) {
         return opt->ttl ? opt->ttl : DEFAULT_TTL;
     }
-    int t = obs - opt->autottl.delta;
+    /* received TTL -> hop distance (initial TTL 64/128/255), like zapret */
+    int init = obs <= 64 ? 64 : (obs <= 128 ? 128 : 255);
+    int t = (init - obs) - opt->autottl.delta;
     if (t < opt->autottl.min) {
         t = opt->autottl.min;
     }

@@ -1,0 +1,6 @@
+﻿[package]
+name = "windows-link"
+version = "0.2.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Local stand-in for windows-link without raw-dylib: the windows-gnu host toolchain has no working dlltool. Only build scripts and proc-macros on the Windows build host use it."

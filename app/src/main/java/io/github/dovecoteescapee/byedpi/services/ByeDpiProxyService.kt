@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import io.github.dovecoteescapee.byedpi.R
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxy
 import io.github.dovecoteescapee.byedpi.core.ByeDpiProxyPreferences
+import io.github.dovecoteescapee.byedpi.core.RustEngine
 import io.github.dovecoteescapee.byedpi.data.*
 import io.github.dovecoteescapee.byedpi.receiver.ScreenEventsController
 import io.github.dovecoteescapee.byedpi.utility.*
@@ -141,7 +142,7 @@ class ByeDpiProxyService : LifecycleService() {
             throw IllegalStateException("Proxy fields not null")
         }
 
-        proxy = ByeDpiProxy()
+        proxy = ByeDpiProxy(RustEngine.isSelected(this))
         val preferences = getByeDpiPreferences()
 
         proxyJob = lifecycleScope.launch(Dispatchers.IO) {
@@ -198,7 +199,7 @@ class ByeDpiProxyService : LifecycleService() {
         }
         if (completed == null) {
             AppLog.w(TAG, "Proxy did not stop in time; forcing socket close")
-            runCatching { proxy.jniForceClose() }
+            runCatching { proxy.forceClose() }
                 .onFailure { AppLog.e(TAG, "Forced proxy close failed", it) }
         }
         proxyJob = null
