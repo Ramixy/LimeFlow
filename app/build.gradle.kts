@@ -30,8 +30,8 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 37
-        versionName = "1.6.0"
+        versionCode = 38
+        versionName = "1.6.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -41,9 +41,9 @@ android {
         }
     }
 
-    // Раздельные APK под архитектуры + universal: меньше размер, меньше багов
-    // от несовпадающих нативных библиотек. x86/x86_64 не выпускаются: для них
-    // нет libtgwsproxy.so — раздел Proxy падал бы на эмуляторах.
+    // Р Р°Р·РґРµР»СЊРЅС‹Рµ APK РїРѕРґ Р°СЂС…РёС‚РµРєС‚СѓСЂС‹ + universal: РјРµРЅСЊС€Рµ СЂР°Р·РјРµСЂ, РјРµРЅСЊС€Рµ Р±Р°РіРѕРІ
+    // РѕС‚ РЅРµСЃРѕРІРїР°РґР°СЋС‰РёС… РЅР°С‚РёРІРЅС‹С… Р±РёР±Р»РёРѕС‚РµРє. x86/x86_64 РЅРµ РІС‹РїСѓСЃРєР°СЋС‚СЃСЏ: РґР»СЏ РЅРёС…
+    // РЅРµС‚ libtgwsproxy.so вЂ” СЂР°Р·РґРµР» Proxy РїР°РґР°Р» Р±С‹ РЅР° СЌРјСѓР»СЏС‚РѕСЂР°С….
     splits {
         abi {
             isEnable = true
@@ -105,8 +105,8 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("com.takisoft.preferencex:preferencex:1.1.0")
     implementation("com.google.android.material:material:1.12.0")
-    // Единственная новая зависимость: генерация QR-кодов для шаринга стратегий
-    // (только core, без camera/camera2).
+    // Р•РґРёРЅСЃС‚РІРµРЅРЅР°СЏ РЅРѕРІР°СЏ Р·Р°РІРёСЃРёРјРѕСЃС‚СЊ: РіРµРЅРµСЂР°С†РёСЏ QR-РєРѕРґРѕРІ РґР»СЏ С€Р°СЂРёРЅРіР° СЃС‚СЂР°С‚РµРіРёР№
+    // (С‚РѕР»СЊРєРѕ core, Р±РµР· camera/camera2).
     implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
     implementation("androidx.lifecycle:lifecycle-service:2.8.4")
@@ -126,7 +126,7 @@ tasks.register<Exec>("runNdkBuild") {
     }
     setArgs(listOf(
         "NDK_PROJECT_PATH=build/intermediates/ndkBuild",
-        // Выводим в build/, а не в src/main/jniLibs: ndk-build чистит каталог вывода.
+        // Р’С‹РІРѕРґРёРј РІ build/, Р° РЅРµ РІ src/main/jniLibs: ndk-build С‡РёСЃС‚РёС‚ РєР°С‚Р°Р»РѕРі РІС‹РІРѕРґР°.
         "NDK_LIBS_OUT=build/intermediates/ndkBuild/hev-libs",
         "APP_BUILD_SCRIPT=src/main/jni/Android.mk",
         "NDK_APPLICATION_MK=src/main/jni/Application.mk"
@@ -138,7 +138,7 @@ tasks.register<Exec>("runNdkBuild") {
 android {
     sourceSets {
         getByName("main") {
-            // libhev-socks5-tunnel.so собирается ndk-build в build/.
+            // libhev-socks5-tunnel.so СЃРѕР±РёСЂР°РµС‚СЃСЏ ndk-build РІ build/.
             jniLibs.srcDir("build/intermediates/ndkBuild/hev-libs")
         }
     }
