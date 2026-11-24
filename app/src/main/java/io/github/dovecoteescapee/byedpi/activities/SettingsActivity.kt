@@ -196,6 +196,35 @@ class SettingsActivity : AppCompatActivity() {
                     .apply()
             }
         }
+        val rustAvailable = io.github.dovecoteescapee.byedpi.core.RustEngine.available
+        binding.engineGroup.check(
+            if (rustAvailable && preferences.getString(
+                    io.github.dovecoteescapee.byedpi.core.RustEngine.PREF_KEY,
+                    io.github.dovecoteescapee.byedpi.core.RustEngine.VALUE_C,
+                ) == io.github.dovecoteescapee.byedpi.core.RustEngine.VALUE_RUST
+            ) R.id.engine_rust_button else R.id.engine_c_button
+        )
+        if (!rustAvailable) {
+            binding.engineRustButton.isEnabled = false
+            binding.engineHint.setText(R.string.settings_engine_unavailable)
+        }
+        if (running) {
+            binding.engineGroup.children.forEach { it.isEnabled = false }
+        }
+        binding.engineGroup.addOnButtonCheckedListener { _, checkedId, checked ->
+            if (checked) {
+                preferences.edit()
+                    .putString(
+                        io.github.dovecoteescapee.byedpi.core.RustEngine.PREF_KEY,
+                        if (checkedId == R.id.engine_rust_button) {
+                            io.github.dovecoteescapee.byedpi.core.RustEngine.VALUE_RUST
+                        } else {
+                            io.github.dovecoteescapee.byedpi.core.RustEngine.VALUE_C
+                        },
+                    )
+                    .apply()
+            }
+        }
         binding.dnsInput.setText(preferences.getString("dns_ip", "1.1.1.1"))
         binding.dnsInput.doAfterTextChanged {
             preferences.edit().putString("dns_ip", it?.toString()?.trim().orEmpty()).apply()

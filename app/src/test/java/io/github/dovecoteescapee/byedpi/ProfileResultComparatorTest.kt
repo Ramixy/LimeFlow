@@ -5,11 +5,18 @@ import io.github.dovecoteescapee.byedpi.core.ServiceCategory
 import io.github.dovecoteescapee.byedpi.core.TargetResult
 import io.github.dovecoteescapee.byedpi.core.TestTarget
 import io.github.dovecoteescapee.byedpi.core.profileResultComparator
+import io.github.dovecoteescapee.byedpi.core.serviceResultComparator
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ProfileResultComparatorTest {
+
+    private val yt = TestTarget("YouTubeWeb", "www.youtube.com", ServiceCategory.YOUTUBE)
+    private val ytFreeze = TestTarget(
+        "YouTubeFreeze64K", "i.ytimg.com", ServiceCategory.YOUTUBE, minBytes = 40_000,
+    )
+    private val dc = TestTarget("DiscordAPI", "discord.com", ServiceCategory.DISCORD)
 
     private fun profile(id: String) = FlowsealProfile(
         id = id,
@@ -19,69 +26,71 @@ class ProfileResultComparatorTest {
         arguments = "-T4",
     )
 
-    private fun result(
-        id: String,
-        protocolSuccess: Int,
-        pingSuccess: Int,
-        averagePingMs: Double?,
-    ) = ProfileTestResult(
+    private fun target(t: TestTarget, ok: Int, latency: Double? = null) = TargetResult(
+        target = t,
+        httpOk = ok >= 1,
+        tls12Ok = ok >= 2,
+        tls13Ok = ok >= 3,
+        latencyMs = latency,
+    )
+
+    private fun result(id: String, vararg targets: TargetResult) = ProfileTestResult(
         profile = profile(id),
-        protocolSuccess = protocolSuccess,
-        pingSuccess = pingSuccess,
-        averagePingMs = averagePingMs,
-        targetResults = emptyList(),
+        protocolSuccess = targets.sumOf { it.protocolSuccess },
+        pingSuccess = 0,
+        averagePingMs = null,
+        targetResults = targets.toList(),
     )
 
     @Test
     fun `best strategy sorts first`() {
-        val worst = result("worst", 0, 0, 500.0)
-        val middle = result("middle", 20, 6, 80.0)
-        val best = result("best", 45, 18, 20.0)
+        val worst = result("worst", target(yt, 0), target(dc, 0))
+        val middle = result("middle", target(yt, 3), target(dc, 0))
+        val best = result("best", target(yt, 3), target(dc, 3))
 
         val ranked = listOf(worst, best, middle).sortedWith(profileResultComparator)
 
-        assertEquals("best", ranked.first().profile.id)
-        assertEquals("worst", ranked.last().profile.id)
+        assertEquals(listOf("best", "middle", "worst"), ranked.map { it.profile.id })
     }
 
     @Test
-    fun `ties break by ping success then lower ping`() {
-        val a = result("a", 30, 10, 100.0)
-        val b = result("b", 30, 12, 300.0)
-        val c = result("c", 30, 12, 40.0)
+    fun `passing the freeze check outweighs a handshake`() {
+        // Same number of passed checks, but only one gets past 16-20 KB.
+        val freezes = result("freezes", target(yt, 3), target(ytFreeze, 0), target(dc, 3))
+        val flows = result("flows", target(yt, 0), target(ytFreeze, 3), target(dc, 3))
 
-        val ranked = listOf(a, c, b).sortedWith(profileResultComparator)
+        val ranked = listOf(freezes, flows).sortedWith(profileResultComparator)
 
-        assertEquals(listOf("c", "b", "a"), ranked.map { it.profile.id })
+        assertEquals("flows", ranked.first().profile.id)
     }
 
     @Test
-    fun `missing ping sorts last within a tie`() {
-        val timedOut = result("timeout", 10, 0, null)
-        val slow = result("slow", 10, 0, 900.0)
+    fun `ties break by real latency, unknown last`() {
+        val slow = result("slow", target(yt, 3, 900.0), target(dc, 3, 900.0))
+        val fast = result("fast", target(yt, 3, 120.0), target(dc, 3, 140.0))
+        val unknown = result("unknown", target(yt, 3), target(dc, 3))
 
-        val ranked = listOf(timedOut, slow).sortedWith(profileResultComparator)
+        val ranked = listOf(unknown, slow, fast).sortedWith(profileResultComparator)
 
-        assertEquals("slow", ranked.first().profile.id)
-        assertEquals("timeout", ranked.last().profile.id)
+        assertEquals(listOf("fast", "slow", "unknown"), ranked.map { it.profile.id })
     }
 
     @Test
-    fun `service scores count protocol checks per category`() {
-        val youtubeTarget = TestTarget("YouTubeWeb", "www.youtube.com", ServiceCategory.YOUTUBE)
-        val discordTarget = TestTarget("DiscordAPI", "discord.com", ServiceCategory.DISCORD)
-        val result = ProfileTestResult(
-            profile = profile("x"),
-            protocolSuccess = 0,
-            pingSuccess = 0,
-            averagePingMs = null,
-            targetResults = listOf(
-                TargetResult(youtubeTarget, httpOk = true, tls12Ok = true, tls13Ok = false),
-                TargetResult(discordTarget, httpOk = false, tls12Ok = false, tls13Ok = false),
-            ),
-        )
+    fun `service ranking puts the service score first`() {
+        val allround = result("allround", target(yt, 2), target(dc, 3))
+        val youtubeOnly = result("youtube", target(yt, 3), target(dc, 0))
 
-        assertEquals(66, result.youtubeScore)
-        assertEquals(0, result.discordScore)
+        val ranked = listOf(allround, youtubeOnly).sortedWith(serviceResultComparator { it.youtubeScore })
+
+        assertEquals("youtube", ranked.first().profile.id)
+    }
+
+    @Test
+    fun `service scores weight content checks`() {
+        val r = result("x", target(yt, 3), target(ytFreeze, 0), target(dc, 2))
+
+        // YouTube: 3*1 passed of (3*1 + 3*3) = 3/12
+        assertEquals(25, r.youtubeScore)
+        assertEquals(66, r.discordScore)
     }
 }

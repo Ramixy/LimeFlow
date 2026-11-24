@@ -1076,6 +1076,19 @@ mod tests {
     }
 
     #[test]
+    fn zapret2_profiles_parse() {
+        let p = run(&["-Kt,h", "-H:youtube.com", "-Qr,d", "-nwww.google.com", "-S", "-z1:4:64", "-t5",
+            "-d1", "-d1+sd", "-f-1", "-An", "-Kt,h", "-H:discord.com", "-Qo,d", "-nwww.google.com",
+            "-S", "-z1:4:64", "-t6", "-f-1"]);
+        let yt = &p.groups[0];
+        assert_eq!(yt.fake_mod, FM_RAND | FM_DUPSID);
+        assert!(yt.md5sig);
+        assert_eq!(yt.parts.len(), 3);
+        assert_eq!(yt.parts[1].flag, OFFSET_SNI | OFFSET_SLD);
+        assert_eq!(p.groups[1].fake_mod, FM_ORIG | FM_DUPSID);
+    }
+
+    #[test]
     fn copy_group() {
         let p = run(&["-s1", "-An", "-B1"]);
         assert_eq!(p.groups[1].parts.len(), 1);

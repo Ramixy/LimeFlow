@@ -49,6 +49,18 @@ object StrategyMemory {
 
     fun networkLabel(context: Context): String = if (onWifi(context)) "Wi-Fi" else "LTE"
 
+    /**
+     * Identity of the current network for strategy results: Wi-Fi, or the
+     * mobile operator (MCC+MNC, needs no permission). Operators filter
+     * differently, so their results are kept apart.
+     */
+    fun networkKey(context: Context): String {
+        if (onWifi(context)) return "wifi"
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+        val op = runCatching { tm?.networkOperator }.getOrNull().orEmpty()
+        return if (op.isBlank()) "cell" else "cell:$op"
+    }
+
     fun onWifi(context: Context): Boolean {
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             ?: return true

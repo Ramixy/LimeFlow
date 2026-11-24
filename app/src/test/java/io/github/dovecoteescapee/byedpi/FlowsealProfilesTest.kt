@@ -43,11 +43,14 @@ class FlowsealProfilesTest {
      * fake-packet stage when the setsockopt fails, so -S must never come back.
      */
     @Test
-    fun noProfileUsesMd5sig() {
+    fun md5sigOnlyInZapret2Profiles() {
+        // -S is best effort since 1.6.3 (most Android kernels lack TCP MD5),
+        // so only the ZAPRET2 profiles, which mirror zapret2's tcp_md5, use it.
         FlowsealProfiles.all.forEach { profile ->
             val args = shellSplit(profile.arguments)
+            if (profile.name.startsWith("ZAPRET2")) return@forEach
             assertFalse(
-                "${profile.name} uses -S/--md5sig, unsupported on Android",
+                "${profile.name} uses -S/--md5sig outside the ZAPRET2 series",
                 args.any { it == "-S" || it == "--md5sig" },
             )
         }

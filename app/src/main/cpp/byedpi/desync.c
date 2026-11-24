@@ -389,10 +389,10 @@ static ssize_t send_fake(struct eval *val, const char *buffer,
             break;
         }
         val->restore_ttl = 1;
-        if (opt->md5sig && set_md5sig(val->fd, 5)) {
-            break;
-        }
-        val->restore_md5 = opt->md5sig;
+        /* Best effort: many Android kernels lack CONFIG_TCP_MD5SIG. Failing
+         * here used to drop the whole fake stage; now the fake still goes
+         * out, just without the MD5 option (zapret2 tcp_md5 fooling). */
+        val->restore_md5 = opt->md5sig && set_md5sig(val->fd, 5) == 0;
         
         struct iovec vec = { .iov_base = p, .iov_len = pos };
         

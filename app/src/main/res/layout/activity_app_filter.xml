@@ -19,9 +19,12 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:minWidth="0dp"
-            android:text="@string/back_symbol"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="30sp"
+            android:contentDescription="@string/back"
+            app:icon="@drawable/ic_arrow_back_lime"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconSize="24dp"
+            app:iconTint="?android:attr/textColorPrimary"
             app:backgroundTint="@android:color/transparent" />
 
         <com.google.android.material.textview.MaterialTextView

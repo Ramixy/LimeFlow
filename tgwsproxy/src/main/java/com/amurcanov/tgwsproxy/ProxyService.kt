@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -31,6 +33,16 @@ class ProxyService : Service() {
     @Volatile
     private var stopInProgress = false
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Wi-Fi <-> LTE: upstream sockets of the old network die silently while
+    // Telegram keeps its connections to 127.0.0.1 open, so it hangs until the
+    // user re-adds the proxy. On a network change the proxy restarts on the
+    // same port and secret: Telegram sees its connections drop, reconnects at
+    // once, and pools, cooldowns and backoffs start fresh on the new network.
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile
+    private var currentNetwork: Network? = null
+    private var networkChangeJob: Job? = null
 
     // Saved intent extras for restart on kill / onTaskRemoved
     private var lastBindIp: String = "127.0.0.1"
@@ -76,6 +88,7 @@ class ProxyService : Service() {
 
         // Startup verification timeout
         private const val STARTUP_CHECK_DELAY_MS = 3000L
+        private const val NETWORK_CHANGE_DEBOUNCE_MS = 1500L
 
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning
@@ -200,6 +213,7 @@ class ProxyService : Service() {
         }
 
         updateRunningState(true)
+        registerNetworkWatcher()
 
         // Watchdog: verify the proxy is actually listening after startup
         watchdogJob = serviceScope.launch {
@@ -316,6 +330,59 @@ class ProxyService : Service() {
         }
     }
 
+    private fun registerNetworkWatcher() {
+        if (networkCallback != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        currentNetwork = cm.activeNetwork
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val previous = currentNetwork
+                currentNetwork = network
+                // The registration itself reports the current network once.
+                if (previous == null || previous == network) return
+                scheduleNetworkRestart()
+            }
+
+            override fun onLost(network: Network) {
+                if (network == currentNetwork) {
+                    // Keep it as "previous", so the next network counts as a change.
+                    Log.i(TAG, "Default network lost")
+                }
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        } catch (e: Exception) {
+            Log.w(TAG, "Network watcher unavailable", e)
+        }
+    }
+
+    private fun unregisterNetworkWatcher() {
+        networkChangeJob?.cancel()
+        networkChangeJob = null
+        val callback = networkCallback ?: return
+        networkCallback = null
+        currentNetwork = null
+        try {
+            getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun scheduleNetworkRestart() {
+        networkChangeJob?.cancel()
+        networkChangeJob = serviceScope.launch {
+            // Debounce: switching networks fires several callbacks, and the new
+            // network needs a moment before DNS and routes work.
+            delay(NETWORK_CHANGE_DEBOUNCE_MS)
+            if (_isRunning.value && !stopInProgress) {
+                Log.i(TAG, "Network changed, restarting proxy: Telegram reconnects on its own")
+                restartProxy()
+            }
+        }
+    }
+
     private fun extractStat(stats: String, key: String): String {
         val idx = stats.indexOf(key)
         if (idx == -1) return "0B"
@@ -345,6 +412,7 @@ class ProxyService : Service() {
     private fun stopProxy() {
         if (stopInProgress) return
         stopInProgress = true
+        unregisterNetworkWatcher()
         restartJob?.cancel()
         restartJob = null
         watchdogJob?.cancel()
@@ -524,6 +592,7 @@ class ProxyService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterNetworkWatcher()
         restartJob?.cancel()
         restartJob = null
         watchdogJob?.cancel()

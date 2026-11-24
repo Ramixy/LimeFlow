@@ -88,7 +88,30 @@ static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
     // ClientHello до двух TCP-сегментов, на чём срабатывает DPI (TimeoutError).
     // ring его и так не предлагает, но список групп закреплён явно.
     let mut provider = rustls::crypto::ring::default_provider();
-    provider.kx_groups = vec![rustls::crypto::ring::kx_group::X25519];
+    // key_share уходит только для первой группы (X25519), поэтому P-256/P-384
+    // в supported_groups почти не увеличивают ClientHello, но делают его
+    // похожим на браузерный: голый список из одной X25519 — признак
+    // нестандартного TLS-стека (так в июне 2026 «замёрз» Delta Chat на rustls).
+    provider.kx_groups = vec![
+        rustls::crypto::ring::kx_group::X25519,
+        rustls::crypto::ring::kx_group::SECP256R1,
+        rustls::crypto::ring::kx_group::SECP384R1,
+    ];
+    // Порядок шифров как у Chrome/Android: AES-128-GCM первым.
+    {
+        use rustls::crypto::ring::cipher_suite as cs;
+        provider.cipher_suites = vec![
+            cs::TLS13_AES_128_GCM_SHA256,
+            cs::TLS13_AES_256_GCM_SHA384,
+            cs::TLS13_CHACHA20_POLY1305_SHA256,
+            cs::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+            cs::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+            cs::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+            cs::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+            cs::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+            cs::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+        ];
+    }
     let mut cfg = ClientConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()
         .expect("TLS 1.2/1.3 с ring")
@@ -96,8 +119,66 @@ static TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
         .with_custom_certificate_verifier(Arc::new(NoVerify))
         .with_no_client_auth();
     cfg.resumption = rustls::client::Resumption::in_memory_sessions(100);
+    // Без ALPN ClientHello выглядит нестандартно; h2 не предлагаем, иначе
+    // Cloudflare выберет HTTP/2 и Upgrade до WebSocket не пройдёт.
+    cfg.alpn_protocols = vec![b"http/1.1".to_vec()];
     Arc::new(cfg)
 });
+
+// ---------------------------------------------------------------------------
+// Handshake gate: no bursts of TLS handshakes to one host.
+//
+// ТСПУ в 2026 «замораживает» на ~2 минуты пару (IP клиента, SNI), если к
+// одному домену почти одновременно открывается больше трёх TLS-соединений —
+// так ведут себя прокси-клиенты, а не браузеры. Пул WS открывал их залпом.
+// Здесь: не больше 2 рукопожатий к хосту одновременно и не больше 3 начатых
+// за секунду, с небольшим случайным разбросом.
+// ---------------------------------------------------------------------------
+
+const GATE_CONCURRENT: usize = 2;
+const GATE_BURST: usize = 3;
+const GATE_WINDOW: Duration = Duration::from_millis(1000);
+
+struct HostGate {
+    sem: Arc<tokio::sync::Semaphore>,
+    starts: tokio::sync::Mutex<std::collections::VecDeque<std::time::Instant>>,
+}
+
+static GATES: Lazy<parking_lot::Mutex<HashMap<String, Arc<HostGate>>>> =
+    Lazy::new(|| parking_lot::Mutex::new(HashMap::new()));
+
+async fn gate_enter(host: &str) -> tokio::sync::OwnedSemaphorePermit {
+    let gate = {
+        let mut m = GATES.lock();
+        if m.len() > 256 {
+            m.retain(|_, g| Arc::strong_count(g) > 1);
+        }
+        m.entry(host.to_string())
+            .or_insert_with(|| {
+                Arc::new(HostGate {
+                    sem: Arc::new(tokio::sync::Semaphore::new(GATE_CONCURRENT)),
+                    starts: tokio::sync::Mutex::new(std::collections::VecDeque::new()),
+                })
+            })
+            .clone()
+    };
+    let permit = gate.sem.clone().acquire_owned().await.expect("gate semaphore");
+    let mut starts = gate.starts.lock().await;
+    loop {
+        let now = std::time::Instant::now();
+        while starts.front().map_or(false, |t| now.duration_since(*t) >= GATE_WINDOW) {
+            starts.pop_front();
+        }
+        if starts.len() < GATE_BURST {
+            break;
+        }
+        let wait = GATE_WINDOW - now.duration_since(*starts.front().unwrap());
+        let jitter = Duration::from_millis(rand::random::<u64>() % 150);
+        tokio::time::sleep(wait + jitter).await;
+    }
+    starts.push_back(std::time::Instant::now());
+    permit
+}
 
 // Тот же конфиг, но с ALPN h2 — для CF HTTP/2 мультиплексирования медиа.
 pub static H2_TLS_CONFIG: Lazy<Arc<ClientConfig>> = Lazy::new(|| {
@@ -629,6 +710,8 @@ pub async fn ws_connect_mode(
     timeout: Duration,
     tls: Option<bool>,
 ) -> Result<RawWebSocket, WsError> {
+    // Ожидание в очереди не входит в таймаут подключения.
+    let _permit = gate_enter(domain).await;
     match tokio::time::timeout(timeout, ws_connect_inner(dial_addr, domain, path, timeout, tls)).await {
         Ok(r) => r,
         Err(_) => {

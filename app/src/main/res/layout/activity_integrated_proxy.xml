@@ -25,7 +25,7 @@
         android:background="@drawable/bg_tab_bar"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:padding="6dp"
+        android:padding="5dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
@@ -42,10 +42,10 @@
             android:textColor="?android:attr/textColorPrimary"
             android:textStyle="bold"
             app:backgroundTint="@android:color/transparent"
-            app:cornerRadius="20dp"
+            app:cornerRadius="18dp"
             app:icon="@drawable/ic_limeflow_logo"
             app:iconGravity="textStart"
-            app:iconSize="22dp"
+            app:iconSize="20dp"
             app:iconTint="?attr/colorPrimary" />
 
         <com.google.android.material.button.MaterialButton
@@ -61,10 +61,10 @@
             android:textColor="?attr/colorOnPrimary"
             android:textStyle="bold"
             app:backgroundTint="?attr/colorPrimary"
-            app:cornerRadius="20dp"
+            app:cornerRadius="18dp"
             app:icon="@drawable/ic_telegram_tab"
             app:iconGravity="textStart"
-            app:iconSize="22dp"
+            app:iconSize="20dp"
             app:iconTint="@null" />
     </LinearLayout>
 

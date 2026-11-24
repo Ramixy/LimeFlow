@@ -11,7 +11,7 @@ import org.junit.Test
  * exit at once, which the user only sees as "Proxy rejected the selected strategy".
  */
 class ByeDpiArgumentsTest {
-    private val noArg = setOf('D', 'N', 'U', 'h', 'v', 'E', 'F', 'Z', 'Y')
+    private val noArg = setOf('D', 'N', 'U', 'h', 'v', 'E', 'F', 'Z', 'Y', 'S')
     private val withArg = "wipIbcxALuTByKHVRsdoqfntzlOQeMrmaJGgWPjC".toSet()
 
     private fun letterList(value: String, allowed: Set<Char>): Boolean =

@@ -72,6 +72,12 @@
     <string name="smart_top_youtube">Лучшие для YouTube</string>
     <string name="smart_top_discord">Лучшие для Discord</string>
     <string name="smart_tops_title">Топ стратегий</string>
+    <string name="smart_top_apply">Применить</string>
+    <string name="smart_top_live">Обновляется по ходу проверки</string>
+    <string name="smart_top_hint">Лучшие на этой сети: сначала доля рабочих проверок, затем скорость</string>
+    <string name="smart_top_service_best">Лучшая для YouTube: %1$s · для Discord: %2$s</string>
+    <string name="smart_top_empty_network">Для этой сети ещё нет результатов — запустите подбор</string>
+    <string name="smart_latency">≈ %1$s мс</string>
     <string name="youtube_featured_title">YouTube на Wi-Fi</string>
     <string name="youtube_featured_subtitle">LIMEFLOW YOUTUBE · junk-пакеты и fake TLS, чтобы видео открывалось и дома, и в LTE</string>
     <string name="youtube_featured_action">Выбрать</string>
@@ -214,7 +220,7 @@
     <string name="host_group_other">Остальные</string>
     <string name="host_kind_custom">Свой сайт</string>
     <string name="apply_best">Применить лучшую</string>
-    <string name="apply_best_summary">Лучший результат: %1$s · %2$d/%3$d</string>
+    <string name="apply_best_summary">Лучшая: %1$s · YouTube %2$d%% · Discord %3$d%%</string>
     <string name="pin_strategy">Закрепить</string>
     <string name="copy_strategy">Копировать команду</string>
     <string name="strategy_copied">Команда стратегии скопирована</string>
@@ -507,5 +513,10 @@
 
     <!-- Переключатель движка -->
     <string name="settings_engine_mode">Движок обхода</string>
+    <string name="settings_connection_mode">Режим подключения</string>
+    <string name="settings_engine_c">Классический</string>
+    <string name="settings_engine_rust">Rust (бета)</string>
+    <string name="settings_engine_hint">Rust — новый движок с tun2proxy. Если что-то не работает, вернитесь на классический. Применяется при следующем подключении</string>
+    <string name="settings_engine_unavailable">Rust-движок недоступен на этом устройстве</string>
     <string name="settings_running_note">Движок запущен — переключение движка и режима доступно после отключения. Остальные изменения применятся при следующем подключении.</string>
 </resources>

@@ -47,18 +47,59 @@ private fun generateRandomSecret(): String {
     return bytes.joinToString("") { "%02x".format(it) }
 }
 
-fun openTelegram(context: Context, url: String) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
-    } catch (_: ActivityNotFoundException) {
-        Toast.makeText(
-            context,
-            com.amurcanov.tgwsproxy.R.string.telegram_not_found,
-            Toast.LENGTH_SHORT
-        ).show()
+/** Telegram clients, tried in this order so the link never lands in a browser. */
+private val TELEGRAM_PACKAGES = listOf(
+    "org.telegram.messenger",
+    "org.telegram.messenger.web",
+    "org.telegram.messenger.beta",
+    "org.thunderdog.challegram",
+    "tw.nekomimi.nekogram",
+    "nekox.messenger",
+    "uz.unnarsx.cherrygram",
+    "org.telegram.plus",
+    "com.exteragram.messenger",
+    "it.octogram.android",
+    "org.forkgram.messenger",
+)
+
+/**
+ * https://t.me/proxy?... -> tg://proxy?...: the t.me link opened a browser on
+ * phones where Telegram is not the verified handler, and t.me itself is
+ * blocked, so it only worked with a VPN. tg:// goes straight to the client.
+ */
+private fun telegramUri(url: String): Uri {
+    val parsed = Uri.parse(url)
+    if (parsed.scheme == "tg") return parsed
+    val host = parsed.host.orEmpty()
+    if ((host == "t.me" || host == "telegram.me") && parsed.path?.trim('/') in setOf("proxy", "socks")) {
+        return Uri.parse("tg://${parsed.path!!.trim('/')}?${parsed.encodedQuery.orEmpty()}")
     }
+    return parsed
+}
+
+fun openTelegram(context: Context, url: String) {
+    val tg = telegramUri(url)
+    val attempts = buildList {
+        if (tg.scheme == "tg") {
+            TELEGRAM_PACKAGES.forEach { add(Intent(Intent.ACTION_VIEW, tg).setPackage(it)) }
+            add(Intent(Intent.ACTION_VIEW, tg))
+        }
+        add(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+    for (intent in attempts) {
+        try {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            return
+        } catch (_: ActivityNotFoundException) {
+        } catch (_: SecurityException) {
+        }
+    }
+    Toast.makeText(
+        context,
+        com.amurcanov.tgwsproxy.R.string.telegram_not_found,
+        Toast.LENGTH_SHORT
+    ).show()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

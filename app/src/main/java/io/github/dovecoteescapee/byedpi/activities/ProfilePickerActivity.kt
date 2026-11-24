@@ -29,6 +29,10 @@ import io.github.dovecoteescapee.byedpi.core.ProfileTestResult
 import io.github.dovecoteescapee.byedpi.core.ServiceCategory
 import io.github.dovecoteescapee.byedpi.core.StrategyTestRunner
 import io.github.dovecoteescapee.byedpi.core.profileResultComparator
+import io.github.dovecoteescapee.byedpi.core.serviceResultComparator
+import io.github.dovecoteescapee.byedpi.databinding.ItemTopStrategyBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfile
 import io.github.dovecoteescapee.byedpi.data.FlowsealProfiles
 import io.github.dovecoteescapee.byedpi.data.ProfileKind
@@ -43,7 +47,6 @@ import java.util.Locale
 class ProfilePickerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityProfilePickerBinding
     private lateinit var adapter: ProfileAdapter
-    private var topsExpanded = false
     private var pendingBest: FlowsealProfile? = null
     private var wasTesting = false
     private var lastRenderedResult: ProfileTestResult? = null
@@ -87,12 +90,6 @@ class ProfilePickerActivity : AppCompatActivity() {
         binding.chipOperator.setOnClickListener { setCatalogFilter(CatalogFilter.OPERATOR) }
         binding.chipOther.setOnClickListener { setCatalogFilter(CatalogFilter.OTHER) }
         setCatalogFilter(CatalogFilter.ALL)
-        topsExpanded = getPreferences().getBoolean(TOPS_EXPANDED_KEY, false)
-        binding.serviceTopsCard.setOnClickListener {
-            topsExpanded = !topsExpanded
-            getPreferences().edit().putBoolean(TOPS_EXPANDED_KEY, topsExpanded).apply()
-            updateTopsExpansion(animate = true)
-        }
         restoreSavedResults()
         binding.backButton.setOnClickListener { finish() }
         binding.hostsButton.setOnClickListener {
@@ -217,6 +214,8 @@ class ProfilePickerActivity : AppCompatActivity() {
                 if (last != null && last != lastRenderedResult) {
                     lastRenderedResult = last
                     adapter.updateResult(last)
+                    // The top fills in while the test runs, not only at the end.
+                    updateTopResults(state.ranked, live = true)
                 }
             }
 
@@ -244,13 +243,24 @@ class ProfilePickerActivity : AppCompatActivity() {
         binding.smartProgress.visibility = View.GONE
         binding.smartTestTitle.setText(R.string.smart_test)
         binding.searchInput.isEnabled = true
-        val saved = StrategyTestRunner.loadSavedResults(this).sortedWith(profileResultComparator)
-        adapter.showRanked(saved)
-        updateTopResults(saved)
         binding.smartTestStatus.text = status()
-        if (finished) {
-            showApplyBest(saved)
-            showFinalConsole(saved)
+        lifecycleScope.launch {
+            val saved = loadRankedForThisNetwork()
+            adapter.showRanked(saved)
+            updateTopResults(saved)
+            if (finished) {
+                showApplyBest(saved)
+                showFinalConsole(saved)
+            }
+        }
+    }
+
+    /** Parsing the saved JSON and the catalog is heavy: done off the main thread. */
+    private suspend fun loadRankedForThisNetwork(): List<ProfileTestResult> {
+        val context = applicationContext
+        return withContext(Dispatchers.Default) {
+            StrategyTestRunner.currentNetworkResults(context, StrategyTestRunner.loadSavedResults(context))
+                .sortedWith(profileResultComparator)
         }
     }
 
@@ -271,7 +281,7 @@ class ProfilePickerActivity : AppCompatActivity() {
     private fun showApplyBest(ranked: List<ProfileTestResult>) {
         // The list is sorted best-first; the first profile that passed at least one
         // protocol check is the best one.
-        val best = ranked.firstOrNull { it.protocolSuccess > 0 } ?: run {
+        val best = ranked.firstOrNull { it.combinedScore > 0 } ?: run {
             binding.applyBestCard.visibility = View.GONE
             pendingBest = null
             return
@@ -281,8 +291,8 @@ class ProfilePickerActivity : AppCompatActivity() {
         binding.applyBestLabel.text = getString(
             R.string.apply_best_summary,
             best.profile.name,
-            best.protocolSuccess,
-            StrategyTestRunner.PROTOCOL_TEST_COUNT,
+            best.youtubeScore,
+            best.discordScore,
         )
     }
 
@@ -346,78 +356,68 @@ class ProfilePickerActivity : AppCompatActivity() {
     }
 
     private fun restoreSavedResults() {
-        val saved = StrategyTestRunner.loadSavedResults(this)
-        if (saved.isEmpty()) return
-        val ranked = saved.sortedWith(profileResultComparator)
-        adapter.showRanked(ranked)
-        updateTopResults(ranked)
-        showApplyBest(ranked)
-        binding.smartTestStatus.text = getString(R.string.smart_saved_results, ranked.size)
+        lifecycleScope.launch {
+            val ranked = loadRankedForThisNetwork()
+            if (StrategyTestRunner.isRunning) return@launch
+            updateTopResults(ranked)
+            if (ranked.isEmpty()) return@launch
+            adapter.showRanked(ranked)
+            showApplyBest(ranked)
+            binding.smartTestStatus.text = getString(R.string.smart_saved_results, ranked.size)
+        }
     }
 
-    private fun updateTopResults(results: List<ProfileTestResult>) {
-        if (results.isEmpty()) {
-            binding.serviceTopsCard.visibility = View.GONE
+    private fun updateTopResults(results: List<ProfileTestResult>, live: Boolean = false) {
+        val ranked = results.filter { it.combinedScore > 0 }.sortedWith(profileResultComparator)
+        binding.serviceTopsNetwork.text = StrategyMemory.networkLabel(this)
+        if (ranked.isEmpty()) {
+            binding.serviceTopsCard.visibility = if (live) View.VISIBLE else View.GONE
+            binding.serviceTopsHint.setText(
+                if (live) R.string.smart_top_live else R.string.smart_top_empty_network
+            )
+            binding.serviceTopsList.removeAllViews()
             return
         }
         binding.serviceTopsCard.visibility = View.VISIBLE
-        binding.youtubeTop.text = formatServiceTop(results) { it.youtubeScore }
-        binding.discordTop.text = formatServiceTop(results) { it.discordScore }
-        updateTopsExpansion(animate = false)
-    }
-
-    private fun updateTopsExpansion(animate: Boolean) {
-        if (animate) {
-            TransitionManager.beginDelayedTransition(binding.root)
+        val bestYoutube = ranked.sortedWith(serviceResultComparator { it.youtubeScore }).first()
+        val bestDiscord = ranked.sortedWith(serviceResultComparator { it.discordScore }).first()
+        val top = ranked.take(3)
+        binding.serviceTopsHint.text = when {
+            live -> getString(R.string.smart_top_live)
+            bestYoutube != top.first() || bestDiscord != top.first() ->
+                getString(R.string.smart_top_service_best, bestYoutube.profile.name, bestDiscord.profile.name)
+            else -> getString(R.string.smart_top_hint)
         }
-        binding.serviceTopsContent.visibility = if (topsExpanded) View.VISIBLE else View.GONE
-        binding.serviceTopsToggle.setText(
-            if (topsExpanded) R.string.smart_tops_hide else R.string.smart_tops_show
-        )
-    }
-
-    private fun formatServiceTop(
-        results: List<ProfileTestResult>,
-        score: (ProfileTestResult) -> Int,
-    ): String = serviceRanking(results, score)
-        .take(3)
-        .mapIndexed { index, result ->
-            "${index + 1}. ${result.profile.name}\n   ${score(result)}% · ${formatPing(result.averagePingMs)}"
+        val list = binding.serviceTopsList
+        list.removeAllViews()
+        top.forEachIndexed { index, result ->
+            val row = ItemTopStrategyBinding.inflate(layoutInflater, list, false)
+            row.topRank.text = (index + 1).toString()
+            row.topRank.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                ContextCompat.getColor(this, MEDAL_COLORS[index])
+            )
+            row.topName.text = result.profile.name
+            row.topYoutube.text = getString(R.string.smart_youtube_score, result.youtubeScore)
+            row.topDiscord.text = getString(R.string.smart_discord_score, result.discordScore)
+            row.topLatency.text = result.averageLatencyMs?.let {
+                getString(R.string.smart_latency, String.format(Locale.US, "%.0f", it))
+            }.orEmpty()
+            row.topBar.setProgressCompat(result.combinedScore, false)
+            row.topApply.isEnabled = !live
+            row.topApply.setOnClickListener { applyProfile(result.profile) }
+            row.root.setOnClickListener { if (!live) applyProfile(result.profile) }
+            list.addView(row.root)
         }
-        .joinToString("\n")
-
-    private fun serviceRanking(
-        results: List<ProfileTestResult>,
-        score: (ProfileTestResult) -> Int,
-    ): List<ProfileTestResult> = results.sortedWith(
-        compareByDescending<ProfileTestResult> { score(it) }
-            .thenByDescending { it.combinedScore }
-            .thenByDescending { it.pingSuccess }
-            .thenBy { it.averagePingMs ?: Double.MAX_VALUE }
-    )
+    }
 
     private fun showFinalConsole(results: List<ProfileTestResult>) {
+        val best = results.firstOrNull { it.combinedScore > 0 }
         binding.testConsole.text = buildString {
             append(getString(R.string.smart_best_title)).append('\n')
-            append('\n').append(getString(R.string.smart_top_youtube)).append('\n')
-            serviceRanking(results) { it.youtubeScore }.take(5).forEachIndexed { index, result ->
-                append(index + 1)
-                    .append(". ")
-                    .append(result.profile.name)
-                    .append(' ')
-                    .append(result.youtubeScore)
-                    .append("%")
-                    .append('\n')
-            }
-            append('\n').append(getString(R.string.smart_top_discord)).append('\n')
-            serviceRanking(results) { it.discordScore }.take(5).forEachIndexed { index, result ->
-                append(index + 1)
-                    .append(". ")
-                    .append(result.profile.name)
-                    .append(' ')
-                    .append(result.discordScore)
-                    .append("%")
-                    .append('\n')
+            if (best != null) {
+                append(best.profile.name).append(" · ")
+                    .append(getString(R.string.smart_youtube_score, best.youtubeScore)).append(" · ")
+                    .append(getString(R.string.smart_discord_score, best.discordScore)).append('\n')
             }
             append('\n').append(getString(R.string.smart_choose_result))
         }
@@ -446,9 +446,11 @@ class ProfilePickerActivity : AppCompatActivity() {
         private val rowComparator =
             compareByDescending<ProfileRow> { it.profile.id in pinnedIds }
                 .thenByDescending { it.result != null }
-                .thenByDescending { it.result?.protocolSuccess ?: -1 }
-                .thenByDescending { it.result?.pingSuccess ?: -1 }
-                .thenBy { it.result?.averagePingMs ?: Double.MAX_VALUE }
+                .then(Comparator { a, b ->
+                    val ra = a.result
+                    val rb = b.result
+                    if (ra != null && rb != null) profileResultComparator.compare(ra, rb) else 0
+                })
         private var source = profiles.map { ProfileRow(it) }.sortedWith(rowComparator)
         private var visible = source
 
@@ -629,18 +631,17 @@ class ProfilePickerActivity : AppCompatActivity() {
                 binding.profileMethod.text = if (result == null) {
                     if (testing) binding.root.context.getString(R.string.smart_waiting) else profile.method
                 } else {
-                    "HTTP/TLS ${result.protocolSuccess}/${StrategyTestRunner.PROTOCOL_TEST_COUNT} · " +
-                        "Ping ${result.pingSuccess}/${StrategyTestRunner.PING_TEST_COUNT}"
+                    "HTTP/TLS ${result.protocolSuccess}/${StrategyTestRunner.PROTOCOL_TEST_COUNT}"
                 }
                 binding.profileDescription.text = if (result == null) {
                     profile.description
                 } else {
-                    binding.root.context.getString(
-                        R.string.smart_average_ping,
-                        result.averagePingMs?.let {
-                            String.format(Locale.US, "%.0f ms", it)
-                        } ?: "timeout",
-                    )
+                    result.averageLatencyMs?.let {
+                        binding.root.context.getString(
+                            R.string.smart_latency,
+                            String.format(Locale.US, "%.0f", it),
+                        )
+                    } ?: profile.description
                 }
                 binding.profileProgress.visibility = if (result == null) View.GONE else View.VISIBLE
                 binding.profileProgress.max = 100
@@ -736,7 +737,7 @@ class ProfilePickerActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "ProfilePicker"
-        private const val TOPS_EXPANDED_KEY = "strategy_tops_expanded"
+        private val MEDAL_COLORS = intArrayOf(R.color.medal_gold, R.color.medal_silver, R.color.medal_bronze)
         private const val SCROLL_POSITION_KEY = "profile_picker_scroll_pos"
     }
 }

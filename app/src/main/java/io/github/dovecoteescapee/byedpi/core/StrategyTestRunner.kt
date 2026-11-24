@@ -61,7 +61,20 @@ data class TargetResult(
     val tls12Ok: Boolean? = null,
     val tls13Ok: Boolean? = null,
     val pingMs: Double? = null,
+    /** Mean time of the successful requests through the proxy (connect..body). */
+    val latencyMs: Double? = null,
 ) {
+    /*
+     * A content probe (body has to flow) says more than a bare handshake, and a
+     * download past the 16-20 KB freeze says the most: a strategy that passes
+     * handshakes but freezes is useless for video and media.
+     */
+    val weight: Int
+        get() = when {
+            target.minBytes >= 32_000 -> 3
+            target.minBytes > 0 -> 2
+            else -> 1
+        }
     val pingOnly: Boolean get() = target.pingOnly
     val protocolSuccess: Int
         get() = listOf(httpOk, tls12Ok, tls13Ok).count { it == true }
@@ -73,7 +86,14 @@ data class ProfileTestResult(
     val pingSuccess: Int,
     val averagePingMs: Double?,
     val targetResults: List<TargetResult>,
+    /** Network the test ran on (StrategyMemory.networkKey); results of another network are not ranked. */
+    val networkKey: String = "",
+    val testedAt: Long = 0L,
 ) {
+    /** Real speed of the strategy: mean request time through it (ping bypasses the proxy). */
+    val averageLatencyMs: Double?
+        get() = targetResults.mapNotNull { it.latencyMs }.takeIf { it.isNotEmpty() }?.average()
+
     val youtubeScore: Int get() = serviceScore(ServiceCategory.YOUTUBE)
     val discordScore: Int get() = serviceScore(ServiceCategory.DISCORD)
     val balancedScore: Int get() = minOf(youtubeScore, discordScore)
@@ -84,14 +104,28 @@ data class ProfileTestResult(
             !it.pingOnly && it.target.category == category
         }
         if (checks.isEmpty()) return 0
-        return checks.sumOf { it.protocolSuccess } * 100 / (checks.size * 3)
+        val passed = checks.sumOf { it.protocolSuccess * it.weight }
+        val total = checks.sumOf { 3 * it.weight }
+        return passed * 100 / total
     }
 }
 
-val profileResultComparator =
-    compareByDescending<ProfileTestResult> { it.protocolSuccess }
-        .thenByDescending { it.pingSuccess }
-        .thenBy { it.averagePingMs ?: Double.MAX_VALUE }
+/*
+ * One ranking for the list, the top and "apply best": weighted service
+ * scores first, then the weaker of the two services, then real latency.
+ * The old order used the raw check count and then the ping, but the ping
+ * is measured once per run around the proxy, so it was the same for every
+ * strategy and ties fell out at random.
+ */
+val profileResultComparator: Comparator<ProfileTestResult> =
+    compareByDescending<ProfileTestResult> { it.combinedScore }
+        .thenByDescending { it.balancedScore }
+        .thenBy { it.averageLatencyMs ?: Double.MAX_VALUE }
+
+fun serviceResultComparator(score: (ProfileTestResult) -> Int): Comparator<ProfileTestResult> =
+    compareByDescending<ProfileTestResult> { score(it) }
+        .thenByDescending { it.combinedScore }
+        .thenBy { it.averageLatencyMs ?: Double.MAX_VALUE }
 
 /**
  * Runs the strategy check loop outside any Activity: rotation or theme changes no
@@ -114,7 +148,9 @@ object StrategyTestRunner {
     private const val BETWEEN_STRATEGIES_DELAY_MS = 30L
     private val MAX_PARALLEL_REQUESTS =
         minOf(16, maxOf(8, Runtime.getRuntime().availableProcessors() * 2))
-    private const val RESULT_FORMAT_VERSION = 3
+    private const val RESULT_FORMAT_VERSION = 4
+    /** Results older than this, or from another network, are not ranked. */
+    private const val RESULT_MAX_AGE_MS = 3L * 24 * 60 * 60 * 1000
     private val PING_TIME = Regex("""time[=<]([\d.]+)\s*ms""")
 
     sealed interface State {
@@ -125,6 +161,8 @@ object StrategyTestRunner {
             val currentName: String,
             val console: String,
             val lastResult: ProfileTestResult?,
+            /** Ranking so far on this network, so the top fills in live. */
+            val ranked: List<ProfileTestResult> = emptyList(),
         ) : State
 
         data class Finished(val rankedCount: Int) : State
@@ -154,8 +192,12 @@ object StrategyTestRunner {
         val appContext = context.applicationContext
         runJob = scope.launch {
             val console = StringBuilder()
-            val savedByProfile = loadSavedResults(appContext)
+            val networkKey = io.github.dovecoteescapee.byedpi.data.StrategyMemory.networkKey(appContext)
+            // Only this network's results are merged: a Wi-Fi winner says
+            // nothing about LTE, and mixing them made the top wrong.
+            val savedByProfile = currentNetworkResults(appContext, loadSavedResults(appContext))
                 .associateByTo(mutableMapOf()) { it.profile.id }
+            if (clearResults) savedByProfile.clear()
             try {
                 // Ping goes around the proxy and does not depend on the strategy:
                 // measure it once per run instead of once per strategy.
@@ -183,7 +225,8 @@ object StrategyTestRunner {
                             lastResult = null,
                         )
                     }
-                    savedByProfile[profile.id] = result
+                    val stamped = result.copy(networkKey = networkKey, testedAt = System.currentTimeMillis())
+                    savedByProfile[profile.id] = stamped
                     persistResults(appContext, savedByProfile.values.sortedWith(profileResultComparator))
                     AppLog.i(
                         TAG,
@@ -197,7 +240,8 @@ object StrategyTestRunner {
                         done = index + 1,
                         currentName = profile.name,
                         console = console.toString(),
-                        lastResult = result,
+                        lastResult = stamped,
+                        ranked = savedByProfile.values.sortedWith(profileResultComparator),
                     )
                 }
 
@@ -310,21 +354,24 @@ object StrategyTestRunner {
             return@supervisorScope TargetResult(target, pingMs = pingMs)
         }
 
-        val http = async(Dispatchers.IO) {
-            requestSlots.withPermit { probeHttps(target, proxyPort, null) }
+        fun timed(tls: String?) = async(Dispatchers.IO) {
+            requestSlots.withPermit {
+                val started = System.nanoTime()
+                val ok = probeHttps(target, proxyPort, tls)
+                ok to (System.nanoTime() - started) / 1_000_000.0
+            }
         }
-        val tls12 = async(Dispatchers.IO) {
-            requestSlots.withPermit { probeHttps(target, proxyPort, "TLSv1.2") }
-        }
-        val tls13 = async(Dispatchers.IO) {
-            requestSlots.withPermit { probeHttps(target, proxyPort, "TLSv1.3") }
-        }
+        val http = timed(null)
+        val tls12 = timed("TLSv1.2")
+        val tls13 = timed("TLSv1.3")
+        val probes = listOf(http.await(), tls12.await(), tls13.await())
         TargetResult(
             target = target,
-            httpOk = http.await(),
-            tls12Ok = tls12.await(),
-            tls13Ok = tls13.await(),
+            httpOk = probes[0].first,
+            tls12Ok = probes[1].first,
+            tls13Ok = probes[2].first,
             pingMs = pingMs,
+            latencyMs = probes.filter { it.first }.map { it.second }.takeIf { it.isNotEmpty() }?.average(),
         )
     }
 
@@ -498,6 +545,7 @@ object StrategyTestRunner {
                                 tls12Ok = targetItem.nullableBoolean("tls12"),
                                 tls13Ok = targetItem.nullableBoolean("tls13"),
                                 pingMs = targetItem.nullableDouble("ping"),
+                                latencyMs = targetItem.nullableDouble("latency"),
                             )
                         )
                     }
@@ -510,6 +558,8 @@ object StrategyTestRunner {
                         pingSuccess = item.optInt("pingSuccess"),
                         averagePingMs = item.nullableDouble("averagePingMs"),
                         targetResults = targetResults,
+                        networkKey = item.optString("network"),
+                        testedAt = item.optLong("testedAt"),
                     )
                 )
             }
@@ -517,6 +567,13 @@ object StrategyTestRunner {
     }.getOrElse {
         AppLog.w(TAG, "Saved strategy results are invalid", it)
         emptyList()
+    }
+
+    /** Results that belong to the current network and are fresh enough to rank. */
+    fun currentNetworkResults(context: Context, results: List<ProfileTestResult>): List<ProfileTestResult> {
+        val key = io.github.dovecoteescapee.byedpi.data.StrategyMemory.networkKey(context)
+        val now = System.currentTimeMillis()
+        return results.filter { it.networkKey == key && now - it.testedAt < RESULT_MAX_AGE_MS }
     }
 
     private fun persistResults(context: Context, results: List<ProfileTestResult>) {
@@ -534,6 +591,8 @@ object StrategyTestRunner {
                         put("pingSuccess", result.pingSuccess)
                         put("pingTotal", PING_TEST_COUNT)
                         put("averagePingMs", result.averagePingMs ?: JSONObject.NULL)
+                        put("network", result.networkKey)
+                        put("testedAt", result.testedAt)
                         put("targets", JSONArray().apply {
                             result.targetResults.forEach { target ->
                                 put(JSONObject().apply {
@@ -542,6 +601,7 @@ object StrategyTestRunner {
                                     put("tls12", target.tls12Ok ?: JSONObject.NULL)
                                     put("tls13", target.tls13Ok ?: JSONObject.NULL)
                                     put("ping", target.pingMs ?: JSONObject.NULL)
+                                    put("latency", target.latencyMs ?: JSONObject.NULL)
                                 })
                             }
                         })
@@ -627,6 +687,15 @@ object StrategyTestRunner {
             ServiceCategory.DISCORD,
             path = "/api/v9/gateway",
             minBytes = 16,
+        ),
+        // Cloudflare: если ТСПУ не прочитал SNI, для IP Cloudflare действует
+        // правило «16 КБ и обрыв». Главная discord.com (сотни КБ HTML) ловит это.
+        TestTarget(
+            "DiscordCFFreeze",
+            "discord.com",
+            ServiceCategory.DISCORD,
+            path = "/",
+            minBytes = 32_000,
         ),
         TestTarget(
             "DiscordGateway",

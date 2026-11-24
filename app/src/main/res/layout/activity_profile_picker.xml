@@ -358,26 +358,29 @@
         </ScrollView>
     </com.google.android.material.card.MaterialCardView>
 
+    <!--
+      Top strategies on the current network. Rows are added in code
+      (one per strategy: medal, name, YouTube/Discord share, latency, Apply),
+      and refresh live while the test runs.
+    -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/service_tops_card"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:clickable="true"
-        android:focusable="true"
-        android:foreground="?attr/selectableItemBackground"
+        android:layout_marginTop="10dp"
         android:visibility="gone"
         app:cardBackgroundColor="?attr/colorSurface"
-        app:cardCornerRadius="22dp"
+        app:cardCornerRadius="24dp"
         app:cardElevation="0dp"
-        app:strokeColor="?attr/colorControlHighlight"
         app:strokeWidth="0dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:paddingHorizontal="16dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -390,75 +393,36 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/smart_tops_title"
-                    android:textColor="?attr/colorPrimary"
-                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:textSize="17sp"
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/service_tops_toggle"
+                    android:id="@+id/service_tops_network"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/smart_tops_hide"
-                    android:textColor="?android:attr/textColorSecondary"
+                    android:background="@drawable/bg_top_chip"
+                    android:paddingHorizontal="10dp"
+                    android:paddingVertical="4dp"
+                    android:textColor="?attr/colorPrimary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <LinearLayout
-                android:id="@+id/service_tops_content"
+            <TextView
+                android:id="@+id/service_tops_hint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:orientation="horizontal">
+                android:layout_marginTop="2dp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="12sp" />
 
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="7dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/smart_top_youtube"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/youtube_top"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="7dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/smart_top_discord"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/discord_top"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-            </LinearLayout>
+            <LinearLayout
+                android:id="@+id/service_tops_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 

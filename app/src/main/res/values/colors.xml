@@ -10,6 +10,9 @@
     <color name="app_text">#10233F</color>
     <color name="app_text_muted">#60748F</color>
     <color name="app_stroke">#D8E6F8</color>
+    <color name="medal_gold">#E0A800</color>
+    <color name="medal_silver">#8E9AAB</color>
+    <color name="medal_bronze">#C0703A</color>
     <color name="lime_primary">#1769E0</color>
     <color name="lime_primary_variant">#0D47A1</color>
     <color name="lime_secondary">#4094F7</color>

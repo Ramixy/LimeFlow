@@ -582,9 +582,10 @@ async fn send_fake(
     let mut md5 = false;
     let res: io::Result<usize> = async {
         setttl(fd, ttl)?;
+        // Best effort, as in the C engine: without CONFIG_TCP_MD5SIG the fake
+        // still goes out, only without the MD5 option.
         if dp.md5sig {
-            set_md5sig(fd, 5)?;
-            md5 = true;
+            md5 = set_md5sig(fd, 5).is_ok();
         }
         let v = vmsplice_gift(pipe.0[1], &pkt, len)?;
         let mut left = v as usize;

@@ -134,9 +134,9 @@ object FlowsealProfiles {
     /*
      * Flat chains still carry `-H` of the enabled host list so unselected sites pass through.
      *
-     * `-S` (md5sig) is deliberately absent everywhere: Android kernels are built without
-     * CONFIG_TCP_MD5SIG, and desync.c aborts the whole fake stage when setsockopt fails,
-     * so it silently disabled the fake packet rather than protecting it.
+     * `-S` (md5sig) stays out of these chains: most Android kernels are built without
+     * CONFIG_TCP_MD5SIG. Since 1.6.3 both engines treat it as best effort (the fake still
+     * goes out without the option), so only the ZAPRET2 profiles opt in.
      */
     private val flatBase = listOf(
         "-Qr -f-200 -s3:5+sm -a1 -As -d1 -s4+sm -s8+sh -f-300 -d6+sh -a1 -At,r,s -o2 -f-30 -As -r5 -Mh -r6+sh -f-250 -s2:7+s -s3:6+sm -a1 -At,r,s -s3:5+sm -s6+s -s7:9+s -q30+sm -a1",
@@ -587,6 +587,58 @@ object FlowsealProfiles {
             ),
             kind = ProfileKind.UNIVERSAL,
             badge = "AutoTTL",
+        ),
+        /*
+         * ZAPRET2-серия (zapret2 / youtubeUnblock, 2026). Без root нет сырых
+         * пакетов, поэтому badseq/timestamp-fooling и repeats недоступны; взяты
+         * их socket-эквиваленты: fake с tls_mod rnd+dupsid и SNI google,
+         * MD5-опция там, где её поддерживает ядро (-S, мягко), авто-TTL и
+         * multidisorder по середине домена второго уровня (+sd = midsld).
+         */
+        FlowsealProfile(
+            "limeflow_z2_yt",
+            "ZAPRET2 YT 2026",
+            "multidisorder midsld + fake md5",
+            "Как YouTube-профиль zapret2: disorder на 1 и midsld, fake с SNI google (rnd, dupsid), MD5 и авто-TTL",
+            profileArgs(
+                youtube = "-Qr,d -nwww.google.com -S -z1:4:64 -t5 -d1 -d1+sd -f-1",
+                discord = "-Qr,d -nwww.google.com -S -z1:4:64 -t5 -s1:5+sm -o2 -d1 -Mh,d",
+                generic = "-Qr,d -nwww.google.com -S -z1:4:64 -t5 -d1 -d1+sd -f-1",
+                retry = "-o1 -d1 -s3+sm -r1+s -Qr -f-1 -z1:4:64 -t6",
+                quicFakes = 11,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "Z2 2026",
+        ),
+        /*
+         * Сайты на Cloudflare (в т.ч. Discord): если ТСПУ не прочитал SNI, для
+         * IP Cloudflare срабатывает запасное правило «16 КБ и обрыв». Поэтому
+         * здесь SNI не прячется: DPI сначала видит копию настоящего ClientHello
+         * с разрешённым доменом (-Qo, тот же отпечаток, что у клиента), а
+         * настоящий уходит повтором без нарезки по SNI.
+         */
+        FlowsealProfile(
+            "limeflow_z2_cf",
+            "ZAPRET2 CF 16K",
+            "orig-clone fake, SNI visible",
+            "Против заморозки Cloudflare после 16 КБ: fake-копия ClientHello с SNI google, без сокрытия SNI",
+            profileArgs(
+                youtube = "-Qo,d -nwww.google.com -S -z1:4:64 -t6 -f-1",
+                discord = "-Qo,d -nwww.google.com -S -z1:4:64 -t6 -f-1",
+                generic = "-Qo,d -nwww.google.com -S -z1:4:64 -t6 -f-1",
+                retry = "-Qo -nwww.google.com -f-1 -z1:4:64 -t8 -o1",
+                quicFakes = 10,
+                voiceFakes = 8,
+                hosts = hosts,
+                quicFakePayload = "-l':${FakePayloads.FAKE_QUIC_GOOGLE}'",
+                voiceFake = FakePayloads.FAKE_DISCORD_UDP,
+            ),
+            kind = ProfileKind.UNIVERSAL,
+            badge = "CF 16K",
         ),
         FlowsealProfile(
             "limeflow_discord",
