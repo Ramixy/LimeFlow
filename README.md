@@ -42,7 +42,7 @@
 - запоминание стратегии для Wi-Fi и мобильной сети.
 
 **Telegram WebSocket Proxy** (вкладка «Прокси»)
-- локальный MTProto-прокси на Rust — порт [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) 1.11.4;
+- локальный MTProto-прокси на Rust — порт [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy) 1.12.0;
 - Cloudflare-воркеры, прямой WebSocket к DC, мультиплексирование медиа по HTTP/2;
 - **свой сервер в одну кнопку:** вводите IP, логин и пароль VPS — LimeFlow сам поставит nginx по SSH, домен `<ip>.sslip.io` не нужно покупать;
 - маскировка SNI, разбивка TLS-рукопожатия и режим без TLS для сетей, где режут соединения с зарубежными серверами;

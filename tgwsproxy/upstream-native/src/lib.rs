@@ -80,6 +80,7 @@ pub unsafe extern "C" fn StartProxy(
 
     init_logging(is_verbose);
     cfproxy::clear_cfproxy_429_cooldowns();
+    cfproxy::reset_cf_timeouts();
 
     if secret_str.len() == 32 {
         if hex::decode(&secret_str).is_ok() {
@@ -172,6 +173,7 @@ pub extern "C" fn StopProxy() -> c_int {
     WS_BLACKLIST.write().clear();
     DC_FAIL_UNTIL.write().clear();
     cfproxy::clear_cfproxy_429_cooldowns();
+    cfproxy::reset_cf_timeouts();
     cfh2::reset();
     proxy::reset_tcp_backoff();
 

@@ -201,6 +201,22 @@ impl RawWebSocket {
         self.write_frame(&frame, WS_WRITE_TIMEOUT).await
     }
 
+    /// Первый пакет (relay init) сразу после хендшейка: при зависании через
+    /// 10 с сокет закрывается, чтобы не держать клиента (tg-ws-proxy 1.12).
+    pub async fn send_init(&self, data: &[u8]) -> Result<(), WsError> {
+        match tokio::time::timeout(Duration::from_secs(10), self.send(data)).await {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => {
+                self.closed.store(true, Ordering::Relaxed);
+                Err(e)
+            }
+            Err(_) => {
+                self.closed.store(true, Ordering::Relaxed);
+                Err(WsError::Timeout)
+            }
+        }
+    }
+
     pub async fn send_batch(&self, parts: &[Vec<u8>]) -> Result<(), WsError> {
         if self.is_closed() {
             return Err(WsError::Other("WebSocket closed".to_string()));
@@ -597,6 +613,38 @@ pub async fn ws_connect_once(
     path: &str,
     timeout: Duration,
 ) -> Result<RawWebSocket, WsError> {
+    ws_connect_mode(dial_addr, domain, path, timeout, None).await
+}
+
+/// `tls`: None — как настроено (TLS, у своего сервера — по OWN_SERVER_PLAIN);
+/// Some(false) — обычный HTTP на порт 80 (tg-ws-proxy 1.12: CF WebSocket без
+/// TLS, когда TLS к Cloudflare уходит в таймаут).
+///
+/// Как в 1.12, весь хендшейк (TCP, TLS, Upgrade) укладывается в один общий
+/// дедлайн `timeout`, а не в сумму отдельных таймаутов на каждый шаг.
+pub async fn ws_connect_mode(
+    dial_addr: &str,
+    domain: &str,
+    path: &str,
+    timeout: Duration,
+    tls: Option<bool>,
+) -> Result<RawWebSocket, WsError> {
+    match tokio::time::timeout(timeout, ws_connect_inner(dial_addr, domain, path, timeout, tls)).await {
+        Ok(r) => r,
+        Err(_) => {
+            ldebug!(" ws setup timeout {} via {}", domain, dial_addr);
+            Err(WsError::Timeout)
+        }
+    }
+}
+
+async fn ws_connect_inner(
+    dial_addr: &str,
+    domain: &str,
+    path: &str,
+    timeout: Duration,
+    tls: Option<bool>,
+) -> Result<RawWebSocket, WsError> {
     if dial_addr.is_empty() {
         return Err(WsError::Other("empty dial address".to_string()));
     }
@@ -606,7 +654,11 @@ pub async fn ws_connect_once(
     // Свой сервер без TLS: ТСПУ режет TLS-рукопожатие к VPS по IP, а обычный
     // HTTP пропускает. MTProto внутри и так зашифрован. В Host — маскировочное
     // имя, DC — в пути (/tg/<dc>/apiws), его разбирает nginx на VPS.
-    let plain = own_server && OWN_SERVER_PLAIN.load(Ordering::Relaxed);
+    let own_plain = own_server && OWN_SERVER_PLAIN.load(Ordering::Relaxed);
+    let plain = match tls {
+        Some(t) => !t,
+        None => own_plain,
+    };
     let port = if plain { 80 } else { 443 };
     let target_addr = format!("{}:{}", dial_addr, port);
 
@@ -618,7 +670,10 @@ pub async fn ws_connect_once(
     set_sock_opts(&raw_conn);
     let raw_conn = SplitStream::new(raw_conn, own_server);
 
-    let (stream, req_path, req_host): (WsIo, String, String) = if plain {
+    let (stream, req_path, req_host): (WsIo, String, String) = if plain && !own_server {
+        // CF без TLS: тот же путь и Host, только порт 80.
+        (Box::new(raw_conn), path.to_string(), domain.to_string())
+    } else if plain {
         let dc = domain
             .strip_prefix("kws")
             .and_then(|r| r.split('.').next())

@@ -375,7 +375,9 @@ async fn open_inner(dc: i32) -> Option<Arc<Lane>> {
     ordered.extend(domains.into_iter().filter(|d| *d != active));
 
     for base in ordered {
-        if cfproxy_429_cooldown_remaining(&base) > Duration::ZERO {
+        if cfproxy_429_cooldown_remaining(&base) > Duration::ZERO
+            || crate::cfproxy::cf_tls_in_cooldown(&base)
+        {
             continue;
         }
         let host = format!("kws{}.{}", dc, base);

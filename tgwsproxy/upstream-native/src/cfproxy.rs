@@ -1,5 +1,5 @@
 use crate::config::*;
-use crate::ws::{is_http_status_error, ws_connect_once, RawWebSocket, WsError};
+use crate::ws::{is_http_status_error, ws_connect_mode, RawWebSocket, WsError};
 use crate::{ldebug, lerror, linfo, lwarn};
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -641,10 +641,115 @@ fn new_timed_attempt_timeout(base: Duration, phase: Duration) -> Duration {
     eff
 }
 
+// ---------------------------------------------------------------------------
+// TLS / HTTP to Cloudflare (tg-ws-proxy 1.12 cf_websocket.py)
+//
+// When TLS to a CF domain times out (the DPI drops the handshake), the same
+// WebSocket is tried over plain HTTP on port 80, and the mode that keeps
+// working is preferred for later connections. A timed-out (domain, mode)
+// pair rests for CF_TIMEOUT_COOLDOWN instead of eating every new
+// connection's setup time.
+// ---------------------------------------------------------------------------
+
+pub const CF_TIMEOUT_COOLDOWN: Duration = Duration::from_secs(30);
+/// Per-attempt timeouts, growing with every timeout within one connection.
+pub const CF_CONNECT_TIMEOUTS: [f64; 5] = [3.0, 3.0, 5.0, 5.0, 10.0];
+
+static CF_TIMEOUT_UNTIL: Lazy<parking_lot::Mutex<std::collections::HashMap<(String, bool), Instant>>> =
+    Lazy::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+static CF_OK_TLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CF_OK_PLAIN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn reset_cf_timeouts() {
+    CF_TIMEOUT_UNTIL.lock().clear();
+    CF_OK_TLS.store(0, std::sync::atomic::Ordering::Relaxed);
+    CF_OK_PLAIN.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// TLS unless plain HTTP has succeeded more often in this session.
+pub fn cf_prefers_tls() -> bool {
+    CF_OK_TLS.load(std::sync::atomic::Ordering::Relaxed) >= CF_OK_PLAIN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn cf_tls_in_cooldown(base: &str) -> bool {
+    cf_mode_in_cooldown(base, true)
+}
+
+fn cf_mode_in_cooldown(base: &str, tls: bool) -> bool {
+    match CF_TIMEOUT_UNTIL.lock().get(&(base.to_string(), tls)) {
+        Some(until) => Instant::now() < *until,
+        None => false,
+    }
+}
+
+fn cf_mark_timeout(base: &str, tls: bool) -> bool {
+    let now = Instant::now();
+    let mut m = CF_TIMEOUT_UNTIL.lock();
+    m.retain(|_, until| *until + CF_TIMEOUT_COOLDOWN > now);
+    let fresh = m.get(&(base.to_string(), tls)).map_or(true, |u| *u <= now);
+    m.insert((base.to_string(), tls), now + CF_TIMEOUT_COOLDOWN);
+    fresh
+}
+
+fn cf_mark_ok(base: &str, tls: bool) {
+    CF_TIMEOUT_UNTIL.lock().remove(&(base.to_string(), tls));
+    if tls {
+        CF_OK_TLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    } else {
+        CF_OK_PLAIN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Connects to a CF proxy domain trying TLS and plain HTTP in the preferred
+/// order; only a timeout moves on to the other mode (a handshake error means
+/// the server was reached and answered). Returns (ws, dialed ip, last error).
+pub async fn cf_connect_alternating(
+    base: &str,
+    domain: &str,
+    path: &str,
+    max_timeout: f64,
+) -> (Option<RawWebSocket>, String, Option<WsError>) {
+    let tls_first = cf_prefers_tls();
+    let modes = [tls_first, !tls_first];
+    let mut timeouts = 0usize;
+    let mut last_err: Option<WsError> = None;
+    let mut last_ip = String::new();
+    for &tls in &modes {
+        if cf_mode_in_cooldown(base, tls) {
+            ldebug!(" CF skip {} tls={}: timeout cooldown", domain, tls);
+            continue;
+        }
+        let t = max_timeout.min(CF_CONNECT_TIMEOUTS[timeouts.min(CF_CONNECT_TIMEOUTS.len() - 1)]);
+        let (ws, ip, err) = cf_connect_domain(domain, path, t, Some(tls)).await;
+        if let Some(ws) = ws {
+            cf_mark_ok(base, tls);
+            if !tls {
+                linfo!(" CF {} работает без TLS (HTTP)", domain);
+            }
+            return (Some(ws), ip, None);
+        }
+        last_ip = ip;
+        let timed_out = matches!(err, Some(WsError::Timeout));
+        last_err = err;
+        if !timed_out {
+            break;
+        }
+        if cf_mark_timeout(base, tls) {
+            lwarn!(" CF WebSocket timeout ({} tls={}), пауза {}с", domain, tls, CF_TIMEOUT_COOLDOWN.as_secs());
+        }
+        timeouts += 1;
+    }
+    if last_err.is_none() {
+        last_err = Some(WsError::Other("all modes in cooldown".to_string()));
+    }
+    (None, last_ip, last_err)
+}
+
 pub async fn cf_connect_domain(
     domain: &str,
     path: &str,
     timeout: f64,
+    tls: Option<bool>,
 ) -> (Option<RawWebSocket>, String, Option<WsError>) {
     let path = if path.is_empty() { "/apiws" } else { path };
 
@@ -657,12 +762,12 @@ pub async fn cf_connect_domain(
     let host_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
     // Свой сервер с IP в имени: сразу по IP, мимо DNS провайдера.
     if let Some((Some(ip), _)) = user_endpoint(domain) {
-        return match ws_connect_once(&ip, domain, path, host_timeout).await {
+        return match ws_connect_mode(&ip, domain, path, host_timeout, None).await {
             Ok(ws) => (Some(ws), ip, None),
             Err(e) => (None, ip, Some(e)),
         };
     }
-    match ws_connect_once(domain, domain, path, host_timeout).await {
+    match ws_connect_mode(domain, domain, path, host_timeout, tls).await {
         Ok(ws) => return (Some(ws), String::new(), None),
         Err(host_err) => {
             if is_http_status_error(&host_err, 429) {
@@ -675,7 +780,7 @@ pub async fn cf_connect_domain(
             }
             ldebug!(" CF DNS {} -> {}", domain, resolved_ip);
             let ip_timeout = new_timed_attempt_timeout(phase_timeout, phase_timeout);
-            match ws_connect_once(&resolved_ip, domain, path, ip_timeout).await {
+            match ws_connect_mode(&resolved_ip, domain, path, ip_timeout, tls).await {
                 Ok(ws) => (Some(ws), resolved_ip, None),
                 Err(e) => (None, resolved_ip, Some(e)),
             }

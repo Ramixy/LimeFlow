@@ -651,6 +651,43 @@ struct TcpBackoff {
 static TCP_BACKOFF: Lazy<parking_lot::Mutex<TcpBackoff>> =
     Lazy::new(|| parking_lot::Mutex::new(TcpBackoff::default()));
 
+/// Resolves once the client has closed its side (EOF or error) without
+/// consuming its bytes; if the client already sent more data the watch just
+/// stops (tg-ws-proxy 1.12 client_setup).
+async fn client_gone(conn: &TcpStream) {
+    loop {
+        match conn.ready(tokio::io::Interest::READABLE).await {
+            Err(_) => return,
+            // RDHUP: the peer closed, even with unread bytes still queued.
+            Ok(r) if r.is_read_closed() || r.is_error() => return,
+            // Data waiting to be read: the readiness stays set, so check the
+            // state now and then instead of spinning.
+            Ok(_) => tokio::time::sleep(Duration::from_millis(200)).await,
+        }
+    }
+}
+
+/// Runs an upstream dial but gives up as soon as the client leaves, so a
+/// closed Telegram connection does not keep CF/TCP attempts (and their
+/// sockets) alive for the full timeout.
+pub async fn unless_client_gone<F: std::future::Future>(conn: &TcpStream, f: F) -> Option<F::Output> {
+    tokio::select! {
+        r = f => Some(r),
+        _ = client_gone(conn) => {
+            ldebug!(" клиент ушёл во время подключения — отмена");
+            None
+        }
+    }
+}
+
+struct ConnectingGuard(String);
+
+impl Drop for ConnectingGuard {
+    fn drop(&mut self) {
+        TCP_BACKOFF.lock().connecting.remove(&self.0);
+    }
+}
+
 pub fn reset_tcp_backoff() {
     *TCP_BACKOFF.lock() = TcpBackoff::default();
 }
@@ -679,10 +716,21 @@ pub async fn tcp_fallback(
         }
     }
     TCP_BACKOFF.lock().connecting.insert(addr.clone());
-    let res = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr)).await;
+    // Guard: a cancelled dial must not leave the address marked "connecting"
+    // forever (that silently disabled the TCP fallback for this DC).
+    let guard = ConnectingGuard(addr.clone());
+    let res = match unless_client_gone(
+        &client,
+        tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr)),
+    )
+    .await
+    {
+        Some(r) => r,
+        None => return false,
+    };
+    drop(guard);
     let mut remote = {
         let mut backoff = TCP_BACKOFF.lock();
-        backoff.connecting.remove(&addr);
         match res {
             Ok(Ok(r)) => {
                 backoff.failures.remove(&addr);
@@ -706,8 +754,9 @@ pub async fn tcp_fallback(
 
     STATS.connections_tcp_fallback.fetch_add(1, Ordering::Relaxed);
     linfo!(" DC{}{} подключен по TCP", dc, media_tag(is_media));
-    if remote.write_all(init).await.is_err() {
-        return false;
+    match tokio::time::timeout(Duration::from_secs(10), remote.write_all(init)).await {
+        Ok(Ok(())) => {}
+        _ => return false,
     }
     bridge_tcp(
         client,
@@ -753,7 +802,13 @@ async fn try_cfproxy_base_domain(dc: i32, base_domain: &str) -> (Option<RawWebSo
     let domain = format!("kws{}.{}", dc, base_domain);
     ldebug!(" CF try {}", domain);
 
-    let (ws, resolved_ip, err) = cf_connect_domain(&domain, "/apiws", 5.0).await;
+    // Свой сервер сам выбирает TLS/HTTP (OWN_SERVER_PLAIN); для доменов CF
+    // при таймауте TLS пробуем HTTP (tg-ws-proxy 1.12).
+    let (ws, resolved_ip, err) = if crate::cfproxy::user_endpoint(&domain).is_some() {
+        cf_connect_domain(&domain, "/apiws", 5.0, None).await
+    } else {
+        crate::cfproxy::cf_connect_alternating(&base_domain, &domain, "/apiws", 10.0).await
+    };
     if let Some(e) = err {
         // ВАЖНО (как в Go): cooldown ставим ТОЛЬКО при HTTP 429, иначе
         // любой reset/timeout выжигал бы домены и плодил лавину cooldown.
@@ -824,11 +879,11 @@ async fn cfproxy_acquire_ws(
     if ws.is_none() && ordered.len() > 1 {
         let remaining_domains: Vec<String> = ordered[1..].to_vec();
         let sem = Arc::new(tokio::sync::Semaphore::new(CFPROXY_FALLBACK_PARALLEL));
-        let mut handles = Vec::new();
+        let mut set = tokio::task::JoinSet::new();
         for bd in remaining_domains {
             let sem = sem.clone();
             let cancel = cancel_token.clone();
-            handles.push(tokio::spawn(async move {
+            set.spawn(async move {
                 tokio::select! {
                     _ = cancel.cancelled() => None,
                     r = async {
@@ -837,19 +892,26 @@ async fn cfproxy_acquire_ws(
                         w.map(|ws| (ws, d))
                     } => r,
                 }
-            }));
+            });
         }
-        for h in handles {
-            if let Ok(Some((w, d))) = h.await {
-                if ws.is_none() {
-                    ws = Some(w);
-                    chosen_domain = d;
-                } else {
-                    tokio::spawn(async move {
-                        w.close().await;
-                    });
-                }
+        // The first domain that connects wins right away; before, the client
+        // waited until every parallel attempt had finished or timed out.
+        while let Some(res) = set.join_next().await {
+            if let Ok(Some((w, d))) = res {
+                ws = Some(w);
+                chosen_domain = d;
+                break;
             }
+        }
+        if !set.is_empty() {
+            // Late winners are closed in the background.
+            tokio::spawn(async move {
+                while let Some(res) = set.join_next().await {
+                    if let Ok(Some((w, _))) = res {
+                        w.close().await;
+                    }
+                }
+            });
         }
     }
 
@@ -895,9 +957,15 @@ pub async fn do_fallback(
     let fallback_dst = resolve_fallback_target(dc, is_media);
     let use_cf = CFPROXY_ENABLED.load(Ordering::Relaxed);
 
-    if use_cf && is_media && H2_ENABLED.load(Ordering::Relaxed) {
+    // HTTP/2 идёт только по TLS: если CF в этой сети лучше работает без TLS,
+    // медиа сразу идёт обычным WebSocket (tg-ws-proxy 1.12).
+    if use_cf && is_media && H2_ENABLED.load(Ordering::Relaxed) && cf_prefers_tls() {
         // Медиа мультиплексируется в одно HTTP/2 соединение с CF.
-        if let Some(lane) = crate::cfh2::open(dc).await {
+        let lane = match unless_client_gone(&conn, crate::cfh2::open(dc)).await {
+            Some(l) => l,
+            None => return true,
+        };
+        if let Some(lane) = lane {
             STATS.connections_h2.fetch_add(1, Ordering::Relaxed);
             STATS.connections_cfproxy.fetch_add(1, Ordering::Relaxed);
             crate::cfh2::bridge_h2(conn, lane, dc, proto, clt_dec, clt_enc, cancel_token).await;
@@ -907,13 +975,15 @@ pub async fn do_fallback(
 
     if use_cf {
         // Сначала добываем WS через CF, conn не трогаем.
-        if let Some((ws, chosen_domain)) =
-            cfproxy_acquire_ws(dc, is_media, &cancel_token).await
-        {
+        let acquired = match unless_client_gone(&conn, cfproxy_acquire_ws(dc, is_media, &cancel_token)).await {
+            Some(a) => a,
+            None => return true,
+        };
+        if let Some((ws, chosen_domain)) = acquired {
             STATS.connections_cfproxy.fetch_add(1, Ordering::Relaxed);
             linfo!(" DC{}{} подключен через CF", dc, media_tag(is_media));
 
-            if ws.send(relay_init).await.is_err() {
+            if ws.send_init(relay_init).await.is_err() {
                 ws.close().await;
                 // CF умер сразу после хендшейка — пробуем TCP на том же conn.
                 if !fallback_dst.is_empty() {
@@ -1144,7 +1214,11 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
     // Прямое подключение DC->IP теперь только через пул WS (tg-ws-proxy 1.11):
     // если в пуле нет готового сокета — сразу fallback (H2/CF/TCP).
     let domains = ws_domains(dc, is_media);
-    let ws = match pool.get(dc, is_media, target.clone(), domains).await {
+    let got = match unless_client_gone(&conn, pool.get(dc, is_media, target.clone(), domains)).await {
+        Some(g) => g,
+        None => return,
+    };
+    let ws = match got {
         Some(w) => w,
         None => {
             ldebug!(" DC{}{}: пул WS пуст -> fallback", dc, m_tag);
@@ -1168,7 +1242,7 @@ pub async fn handle_client(pool: Arc<WsPool>, mut conn: TcpStream, cancel_token:
         }
     };
 
-    if ws.send(&relay_init).await.is_err() {
+    if ws.send_init(&relay_init).await.is_err() {
         lwarn!(" direct relayInit write fail DC{}{}: closed -> fallback", dc, m_tag);
         ws.close().await;
         DC_FAIL_UNTIL.write().insert(dc_key, now + DC_FAIL_COOLDOWN);

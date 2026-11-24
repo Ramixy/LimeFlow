@@ -30,8 +30,8 @@ android {
         applicationId = "app.alt11.mobile"
         minSdk = 23
         targetSdk = 34
-        versionCode = 38
-        versionName = "1.6.1"
+        versionCode = 39
+        versionName = "1.6.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
